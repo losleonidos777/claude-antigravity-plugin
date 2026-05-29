@@ -23,3 +23,9 @@ Thumbs.db
 
 # Plugin data should never be inside the source tree
 plugins/data/
+
+# agy auto-creates project-metadata folders wherever it's run
+.antigravitycli/
+
+# tsbuildinfo
+*.tsbuildinfo
