@@ -1,0 +1,25 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log
+
+# Build artifacts — we DO commit server/dist/ because plugin consumers run pre-built JS
+# (Claude Code loads dist/index.js directly; we don't ship tsc setup to end users).
+# To regenerate locally: cd server && npm run build
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Local scratch
+*.local.json
+*.bak
+*.orig
+
+# Plugin data should never be inside the source tree
+plugins/data/

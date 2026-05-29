@@ -1,0 +1,23 @@
+{
+  "name": "antigravity-plugin-cc-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Dependency-light stdio MCP bridge from Claude Code to the local Antigravity CLI.",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "doctor": "node dist/index.js --doctor",
+    "test": "npm run build && node --test test/unit/*.test.mjs",
+    "smoke": "npm run build && node ../scripts/smoke-test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "node-pty": "^1.1.0"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "name": "antigravity",
+  "description": "Use Google Antigravity CLI from inside Claude Code for reviews, adversarial second opinions, delegated coding tasks, task-list execution, and plan verification.",
+  "version": "0.2.0",
+  "author": {
+    "name": "Leonid Laskin"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/<org>/claude-antigravity-plugin",
+  "mcpServers": "./.mcp.json",
+  "userConfig": {
+    "agy_bin": {
+      "type": "string",
+      "title": "Antigravity CLI binary",
+      "description": "Path or command name for Antigravity CLI. Usually agy or antigravity.",
+      "default": "agy"
+    },
+    "max_job_minutes": {
+      "type": "number",
+      "title": "Max job runtime in minutes",
+      "description": "Maximum runtime for delegated Antigravity jobs before the bridge cancels the process tree.",
+      "default": 20,
+      "min": 1,
+      "max": 240
+    },
+    "default_mode": {
+      "type": "string",
+      "title": "Default Antigravity mode",
+      "description": "Default execution mode: readonly, suggest, or worktree. direct-edit is intentionally unsupported.",
+      "default": "readonly"
+    },
+    "cli_template": {
+      "type": "string",
+      "title": "Optional Antigravity non-interactive template",
+      "description": "Optional expert override, for example: run --prompt-file {prompt} --json. Leave blank unless doctor reports unsupported non-interactive mode.",
+      "default": ""
+    }
+  }
+}

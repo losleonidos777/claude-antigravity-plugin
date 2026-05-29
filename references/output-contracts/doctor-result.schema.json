@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AntigravityDoctorResult",
+  "type": "object",
+  "required": ["ok", "binary", "auth", "project", "capabilities", "warnings", "errors"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "binary": { "type": "object" },
+    "auth": { "type": "object" },
+    "project": { "type": "object" },
+    "capabilities": { "type": "object" },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "errors": { "type": "array", "items": { "type": "string" } }
+  }
+}

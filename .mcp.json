@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "antigravity": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server/dist/index.js"],
+      "cwd": "${CLAUDE_PROJECT_DIR}",
+      "env": {
+        "AGY_BIN": "${user_config.agy_bin}",
+        "ANTIGRAVITY_MAX_JOB_MINUTES": "${user_config.max_job_minutes}",
+        "ANTIGRAVITY_DEFAULT_MODE": "${user_config.default_mode}",
+        "ANTIGRAVITY_CLI_TEMPLATE": "${user_config.cli_template}",
+        "ANTIGRAVITY_PLUGIN_ROOT": "${CLAUDE_PLUGIN_ROOT}",
+        "ANTIGRAVITY_STATE_DIR": "${CLAUDE_PLUGIN_DATA}",
+        "AGY_CLI_HIDE_ACCOUNT_INFO": "1"
+      }
+    }
+  }
+}

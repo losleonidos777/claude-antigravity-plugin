@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AntigravityJobResult",
+  "type": "object",
+  "required": ["jobId", "status", "summary", "resultMarkdown", "changedFiles", "rawLogPath"],
+  "properties": {
+    "jobId": { "type": "string" },
+    "status": { "type": "string" },
+    "summary": { "type": "string" },
+    "resultMarkdown": { "type": "string" },
+    "changedFiles": { "type": "array", "items": { "type": "string" } },
+    "patchPath": { "type": "string" },
+    "rawLogPath": { "type": "string" }
+  }
+}
