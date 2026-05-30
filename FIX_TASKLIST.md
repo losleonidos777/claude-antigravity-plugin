@@ -139,7 +139,7 @@ F2 implementation note (2026-05-30): Built on branch `fix/worktree-changedfiles-
 ### Live verification F4 — RE-TESTED 2026-05-30 after FX3 (Verdict headings + glued-heading): **PASS** (one minor edge remains, non-blocking)
 - [x] **F4-LV2 (verify_plan verdict):** ✅ **FIXED.** `summary` now = the Verdict: `"**PASS WITH RECOMMENDATIONS** The plan is highly feasible…"` (previously grabbed "Unanswered Questions"). The `Verdict`/`Executive Verdict` heading recognition works; narration preamble skipped.
 - [x] **F4 (worktree job summary):** ✅ clean `### Summary` extracted (`"We have created exactly one new file…"`) with the `"I will…"` preamble skipped — the glued-before-heading handling works.
-- [~] **F4-LV1 (readonly delegate `## Summary`):** ⚠️ PARTIAL/minor. Narration-free ✅, but this run still returned the verbose intro instead of the `## Summary` section — because that output glued the heading to the *following* text with no newline (`…ComfyUI server.## SummaryThe bigmotion_pipeline…`). FX3 handles a heading glued to *preceding* text and headings on their own line; the heading-title-glued-to-following-content case isn't isolated. **Non-blocking:** the summary is still informative and narration-free; affects only some PTY-formatted delegate outputs. Optional future tweak: also split on `(#{1,6}\s*\w+?)(?=[A-Z])` / detect a heading word immediately followed by sentence text.
+- [x] **F4-LV1 (readonly delegate `## Summary`):** ✅ **FIXED by FX6.** `normalizeMarkdownHeadings` now also splits a summary/verdict heading glued to following text (`## SummaryThe…` → `## Summary\nThe…`). Re-test returned the clean `## Summary` body ("The bigmotion_pipeline directory contains 12 Python script files…"), not the verbose intro. Guard test confirms `## Summary of changes` is NOT split. (`output-parser.ts:75`)
 - Note: F4's primary goal — never returning the first-line `"I will…"` narration — is met across delegate, verify_plan, worktree, and review. Verdict/clean-heading/JSON-footer cases all extract the right section now.
 
 ---
@@ -158,9 +158,9 @@ F2 implementation note (2026-05-30): Built on branch `fix/worktree-changedfiles-
 
 ## Task F6 — Build, reload, full live regression sweep
 
-- [ ] **F6.1** `cd server && npm run build && npm test` — both green.
-- [ ] **F6.2** `npm run smoke` — green.
-- [ ] **F6.3** Reload the plugin (restart Claude Code session) so MCP serves the new `dist/`.
+- [x] **F6.1** `cd server && npm run build && npm test` — both green (45 unit tests pass, 2026-05-31).
+- [x] **F6.2** `npm run smoke` — green (2026-05-31).
+- [x] **F6.3** Reload the plugin (restart Claude Code session) so MCP serves the new `dist/` — done in the prior live-test session.
 - [ ] **F6.4** Re-run the original 10-tool sweep against Fixture U and confirm the matrix in CONNECTOR_FEEDBACK.md is now all ✅:
   - `doctor`, `setup`, `status` — still ✅
   - `delegate` (readonly) — ✅, `changedFiles: []`, real `summary`
@@ -182,4 +182,4 @@ F2 implementation note (2026-05-30): Built on branch `fix/worktree-changedfiles-
 - [ ] `changedFiles` excludes pre-existing untracked entries and is `[]` for readonly jobs; the content-change caveat (F3.6) is documented; re-reading a finished job with a removed worktree does not clobber the stored record (F3.7).
 - [ ] `summary` reflects the agent's actual summary/verdict — never the first "I will…" narration line and never trailing boilerplate; stale stored narration summaries are overwritten on re-read.
 - [ ] `npm run build`, `npm test`, `npm run smoke` all green; new unit tests cover all 4 fixes **and** the edge cases in F5 (binary/oversize, ignored, staged, rename, removed-worktree, log-only).
-- [ ] `CHANGELOG.md` updated; PR opened against `master` referencing CONNECTOR_FEEDBACK.md.
+- [x] `CHANGELOG.md` updated; PR opened against `master` referencing CONNECTOR_FEEDBACK.md (2026-05-31).

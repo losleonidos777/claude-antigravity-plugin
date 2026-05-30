@@ -315,3 +315,38 @@ Verification:
 Pause point:
 
 - FX6 is complete and rebuilt into `server/dist/**`. Pause here for plugin reload + live re-test before F6 changelog/commit/PR.
+
+## F6 Merge Readiness - 2026-05-31 (Claude, Codex daily limit hit)
+
+Context:
+
+- FX6 was implemented, committed (`fe37762 "fix f6"`), and live-verified green in a
+  prior session (readonly summary = `## Summary` body; verify_plan = Verdict;
+  worktree create-file attributes exactly the new file; broad review = skip).
+- Codex hit its daily limit before F6, so Claude completed the doc/git-only F6 phase.
+
+F6.1 verification (no source changes):
+
+- `npm run build`: passed.
+- `npm test`: passed, 45 tests.
+- `npm run smoke`: passed.
+
+F6.2 CHANGELOG:
+
+- Extended the `Unreleased` → `Fixed` section to cover the full effort: worktree
+  full-working-state reproduction (F2), baseline-relative `changedFiles`
+  attribution with `--untracked-files=all` (F3 + FX1/FX2), and the
+  `extractSummary` JSON-footer > Summary/Verdict-heading (glued before/after
+  tolerant, FX3/FX6) > boilerplate-filtered-last-paragraph chain with
+  stale-narration overwrite (F4). Documented the staged-vs-unstaged collapse
+  caveat and the path-only set-difference caveat.
+
+F6.3 commit:
+
+- Committed the CHANGELOG update plus the FIX_TASKLIST F4-LV1 → PASS flip.
+
+F6.4 PR:
+
+- Opened a PR `fix/worktree-changedfiles-summary` → `master` summarising
+  F2/F3/F4 + FX1/FX6, linking CONNECTOR_FEEDBACK.md and the F*_TEST_FEEDBACK.md
+  files. NOT self-merged — left for the user's review.

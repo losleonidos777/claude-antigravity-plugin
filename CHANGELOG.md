@@ -12,6 +12,35 @@
   launching a doomed long-running review.
 - Review prompts now tell Antigravity to review the supplied context rather than
   searching the filesystem for reviewed files.
+- **Worktree jobs now reproduce the user's full working state.** `prepareWorktree`
+  copies untracked-but-not-ignored files
+  (`git ls-files -z --others --exclude-standard`, with denied-path / symlink /
+  per-file-size / total-bytes guards) and replays dirty tracked edits
+  (`git diff --binary --no-ext-diff --no-textconv HEAD --` validated with
+  `git apply --check`). A `warning` summarising the copied count / replay issues
+  is now threaded through `delegate`, `execute_tasks`, and `result`. The
+  worktree-mode prompt instructs the agent to STOP and report (not fabricate) a
+  task-referenced file that is missing from the worktree. Known caveat:
+  `git diff HEAD` collapses staged vs. unstaged edits, so the worktree reproduces
+  the combined working-tree content but not the separate index state.
+- **`changedFiles` now reflects only the job's own changes.** Attribution is
+  baseline-relative: `baselineStatus` is captured after the worktree is prepared
+  (so copied/replayed files are not counted as job-created), and
+  `gitChangedFiles` runs `git status --porcelain=v2 --untracked-files=all -z` so
+  files created inside an already-untracked directory are detected instead of
+  being masked by a collapsed directory entry. Readonly jobs are forced to
+  `changedFiles: []`. Re-reading a finished job whose worktree has since been
+  removed no longer clobbers the stored record with an empty list. Caveat:
+  set-difference is on paths only, so a file already dirty in the baseline and
+  further modified by the job is not re-flagged.
+- **`summary` now reflects the agent's real summary/verdict, never the first
+  "I will…" narration line.** `extractSummary` prefers the validated JSON footer,
+  then a `## Summary` / `Verdict` / `Executive Verdict` heading (tolerant of a
+  heading glued to preceding *or* following text — e.g. `server.## SummaryThe…`
+  is split, while a legitimate `## Summary of changes` title is left intact),
+  then a boilerplate-filtered last paragraph, with a neutral fallback when only
+  bridge-log content is available. A stored summary that is clearly narration is
+  overwritten on re-read.
 
 ### Security
 
