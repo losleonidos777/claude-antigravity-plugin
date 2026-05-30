@@ -262,3 +262,30 @@ Pass 3 - Production readiness:
 - Searched for old raw `git status --short` usage and first-line summary assignments in `server/src` and `server/dist`; no stale source paths remain.
 - Generated `server/dist/**` is rebuilt.
 - Remaining gate before merge is the requested live plugin reload/re-test sweep.
+
+## FX Follow-up After F3/F4 Live Test - 2026-05-30
+
+Input read:
+
+- `F3_F4_TEST_FEEDBACK.md` in full.
+
+Branch:
+
+- Stayed on `fix/worktree-changedfiles-summary` at/after `a2bbeda`.
+
+Fixes:
+
+- FX1: `gitChangedFiles` now runs `git status --porcelain=v2 --untracked-files=all -z`, so baseline/current snapshots enumerate individual untracked files instead of collapsed untracked directories.
+- FX2: Added a regression test for creating a file inside an already-untracked directory; `changedSince` now returns the new nested file.
+- FX3: `extractSummary` now treats `Verdict` / `Executive Verdict` headings as summary-equivalent and normalizes glued markdown headings such as `done:### Summary`.
+- FX4: Added regression tests for verdict-before-trailing-questions output and glued `### Summary` headings.
+
+Verification:
+
+- `npm run build`: passed.
+- `npm test`: passed, 43 tests.
+- `npm run smoke`: passed.
+
+Pause point:
+
+- FX1-FX5 are complete and rebuilt into `server/dist/**`. Pause here for plugin reload + live re-test before F6/merge.

@@ -42,16 +42,23 @@ function neutralLogSummary(markdown) {
     return line ? compactText(line, 240) : "Result output is available in the raw log.";
 }
 function looksLogOnly(markdown) {
+    const normalized = normalizeMarkdownHeadings(markdown);
     const lines = markdown
         .split(/\r?\n/)
         .map((line) => line.trim())
         .filter(Boolean);
-    return lines.length > 0 && lines.some(isBridgeLog) && !extractJsonBlock(markdown) && !/^#{1,6}\s*.*summary\s*$/im.test(markdown);
+    return lines.length > 0 && lines.some(isBridgeLog) && !extractJsonBlock(markdown) && !/^#{1,6}\s*.*(?:summary|verdict)\s*$/im.test(normalized);
+}
+function normalizeMarkdownHeadings(markdown) {
+    return markdown.replace(/([^\r\n#])(#{1,6}\s+)/g, "$1\n$2");
+}
+function isSummaryHeading(line) {
+    return /^#{1,6}\s*.*(?:summary|verdict)\s*$/i.test(line.trim());
 }
 function extractSummaryHeading(cleaned) {
-    const lines = cleaned.split(/\r?\n/);
+    const lines = normalizeMarkdownHeadings(cleaned).split(/\r?\n/);
     for (let i = 0; i < lines.length; i++) {
-        if (!/^#{1,6}\s*.*summary\s*$/i.test(lines[i].trim()))
+        if (!isSummaryHeading(lines[i]))
             continue;
         const section = [];
         for (let j = i + 1; j < lines.length; j++) {
@@ -151,7 +158,7 @@ export function readResult(resultPath, logPath, includeRaw = false) {
 }
 export function gitChangedFiles(cwd) {
     try {
-        const res = childProcess.spawnSync("git", ["status", "--porcelain=v2", "-z"], {
+        const res = childProcess.spawnSync("git", ["status", "--porcelain=v2", "--untracked-files=all", "-z"], {
             cwd,
             encoding: "buffer",
             timeout: 5000,

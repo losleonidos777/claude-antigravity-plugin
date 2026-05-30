@@ -66,6 +66,22 @@ test('changedSince excludes baseline entries and includes new files', () => {
   }
 });
 
+test('changedSince detects files created inside an already-untracked directory', () => {
+  const repo = makeRepo();
+  try {
+    fs.mkdirSync(path.join(repo, 'untracked-dir'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'untracked-dir', 'existing.txt'), 'before');
+    const baseline = gitChangedFiles(repo);
+    assert.ok(baseline.includes('untracked-dir/existing.txt'), `expected per-file baseline in ${JSON.stringify(baseline)}`);
+    assert.ok(!baseline.includes('untracked-dir/'), `baseline must not collapse the directory: ${JSON.stringify(baseline)}`);
+
+    fs.writeFileSync(path.join(repo, 'untracked-dir', 'created.txt'), 'after');
+    assert.deepEqual(changedSince(repo, baseline), ['untracked-dir/created.txt']);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('changedSince reports renamed target path', () => {
   const repo = makeRepo();
   try {
@@ -135,6 +151,24 @@ test('extractSummary reads markdown summary section', () => {
     'None'
   ].join('\n');
   assert.equal(extractSummary(markdown), 'The pipeline modules were inspected successfully.');
+});
+
+test('extractSummary reads verdict before trailing questions', () => {
+  const markdown = [
+    '# Plan Verification',
+    '',
+    '### Verdict',
+    'PASS WITH RECOMMENDATIONS: the plan is feasible with minor sequencing changes.',
+    '',
+    '### Unanswered Questions',
+    'Confirm deployment timing.'
+  ].join('\n');
+  assert.equal(extractSummary(markdown), 'PASS WITH RECOMMENDATIONS: the plan is feasible with minor sequencing changes.');
+});
+
+test('extractSummary tolerates headings glued to preceding text', () => {
+  const markdown = 'Completed the work done:### Summary\nThe bigmotion_pipeline directory contains 12 Python scripts.\n\n### Files changed\nNone';
+  assert.equal(extractSummary(markdown), 'The bigmotion_pipeline directory contains 12 Python scripts.');
 });
 
 test('extractSummary skips narration and trailing boilerplate', () => {

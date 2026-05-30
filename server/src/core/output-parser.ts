@@ -62,17 +62,26 @@ function neutralLogSummary(markdown: string): string {
 }
 
 function looksLogOnly(markdown: string): boolean {
+  const normalized = normalizeMarkdownHeadings(markdown);
   const lines = markdown
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-  return lines.length > 0 && lines.some(isBridgeLog) && !extractJsonBlock(markdown) && !/^#{1,6}\s*.*summary\s*$/im.test(markdown);
+  return lines.length > 0 && lines.some(isBridgeLog) && !extractJsonBlock(markdown) && !/^#{1,6}\s*.*(?:summary|verdict)\s*$/im.test(normalized);
+}
+
+function normalizeMarkdownHeadings(markdown: string): string {
+  return markdown.replace(/([^\r\n#])(#{1,6}\s+)/g, "$1\n$2");
+}
+
+function isSummaryHeading(line: string): boolean {
+  return /^#{1,6}\s*.*(?:summary|verdict)\s*$/i.test(line.trim());
 }
 
 function extractSummaryHeading(cleaned: string): string {
-  const lines = cleaned.split(/\r?\n/);
+  const lines = normalizeMarkdownHeadings(cleaned).split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
-    if (!/^#{1,6}\s*.*summary\s*$/i.test(lines[i].trim())) continue;
+    if (!isSummaryHeading(lines[i])) continue;
     const section: string[] = [];
     for (let j = i + 1; j < lines.length; j++) {
       if (/^#{1,6}\s+\S/.test(lines[j])) break;
@@ -180,7 +189,7 @@ export function readResult(resultPath?: string, logPath?: string, includeRaw = f
 
 export function gitChangedFiles(cwd: string): string[] {
   try {
-    const res = childProcess.spawnSync("git", ["status", "--porcelain=v2", "-z"], {
+    const res = childProcess.spawnSync("git", ["status", "--porcelain=v2", "--untracked-files=all", "-z"], {
       cwd,
       encoding: "buffer",
       timeout: 5000,

@@ -90,17 +90,13 @@ F1 status note (2026-05-30): Built and live-verified through the compiled MCP st
 
 F2 implementation note (2026-05-30): Built on branch `fix/worktree-changedfiles-summary`. `prepareWorktree` now replays tracked dirty state with `git diff --binary --no-ext-diff --no-textconv HEAD --` plus `git apply --check`, copies untracked non-ignored files with safety/size/symlink guards, and returns a warning summary. `delegate` and `execute_tasks` now persist/return the warning. Temp-repo sanity check passed for unstaged tracked, staged tracked, untracked, and ignored files. Live F2 verification remains pending after plugin reload.
 
-### ✅ Live verification F2
-- [ ] **F2-LV1 (untracked source now visible):** with Fixture U untracked, run:
-  `antigravity_execute_tasks { mode: "worktree", taskListText: "- [ ] Read bigmotion_pipeline/run_all.py and list the exact TOPICS array it defines. Do not modify files." }`
-  Wait for completion, then inspect the result. **Expect:** the agent reports the **real 11 topic slugs** from `run_all.py` (`anthropology, art-transformations, bible-stories, explain-like-im-5, fun-facts, interesting-stories, motivational-stories, philosophy, powerful-videos-for-women, pro-tips, urban-legends`). Failure mode (pre-fix) was "file not found" / fabrication.
-- [ ] **F2-LV2 (worktree actually contains the file):** check the job's `worktreePath`:
-  `ls <worktreePath>/bigmotion_pipeline/run_all.py` → **Expect:** exists.
-- [ ] **F2-LV3 (isolation preserved):** confirm `e:/StabilityMatrix_win11/Packages/ComfyUI/bigmotion_pipeline/` is unchanged (no new files, originals intact).
-- [ ] **F2-LV4 (warning surfaced):** the tool result (and persisted job state) includes the "Copied N untracked file(s)" warning with N ≥ 12.
-- [ ] **F2-LV5 (dirty tracked file replayed):** stage+edit a tracked file in the host repo (Fixture T: `git add bigmotion_pipeline/download_music.py` then make a 1-line edit), run a `worktree` delegate that reads that file, and **expect the agent to see the edited content**, not the HEAD version. Then `git reset` / revert the edit.
-- [ ] **F2-LV6 (cleanup — use the RETURNED names, not jobId):** read `worktreePath` and `branchName` from the tool result and run:
-  `git -C e:/StabilityMatrix_win11/Packages/ComfyUI worktree remove "<worktreePath>"` then `git -C e:/StabilityMatrix_win11/Packages/ComfyUI branch -D "<branchName>"` (branch is `antigravity/pending-…`, NOT `antigravity/<jobId>`).
+### ✅ Live verification F2 — PASSED 2026-05-30 (Claude independent live test, post-reboot, branch `fix/worktree-changedfiles-summary`)
+- [x] **F2-LV1 (untracked source now visible):** `execute_tasks { mode:"worktree" }` reading `run_all.py` → agent reported the **exact 11 slugs** (`anthropology … urban-legends`), `Blockers: None`. ✅
+- [x] **F2-LV2 (worktree actually contains the file):** worktree held `bigmotion_pipeline/run_all.py` (3123 bytes) + 12 `.py` files. ✅
+- [x] **F2-LV3 (isolation preserved):** host `bigmotion_pipeline/` unchanged (12 `.py`, no new files). ✅
+- [x] **F2-LV4 (warning surfaced):** result + launch carried `warning: "Copied 73 untracked file(s) into the isolated worktree."` (N=73 ≥ 12). ✅
+- [ ] **F2-LV5 (dirty tracked file replayed):** NOT live-tested — fixture `bigmotion_pipeline/` is fully untracked so there is no dirty *tracked* file without staging one first. Unit-verified in a temp repo (staged+unstaged replay confirmed). To confirm live later: `git add bigmotion_pipeline/download_music.py` + 1-line edit, run a `worktree` delegate reading it, expect edited content, then `git reset`/revert.
+- [x] **F2-LV6 (cleanup — use the RETURNED names, not jobId):** removed via returned `worktreePath`/`branchName` (`antigravity/pending-mpshhhx5`); also pruned a stale earlier worktree. `git worktree list` clean. ✅
 
 ---
 
@@ -117,11 +113,12 @@ F2 implementation note (2026-05-30): Built on branch `fix/worktree-changedfiles-
 - [x] **F3.7 (don't clobber a good record on re-read)** `result.ts` recomputes `changedFiles` on **every** call ([`result.ts:12-15`](server/src/tools/result.ts)). For a finished worktree job whose worktree was later removed, `changedSince` can return `[]` and overwrite a previously-correct stored value. Guard: if the job is in a terminal state AND the execution root no longer exists (`!fs.existsSync(executionRoot)`), return the **stored** `changedFiles`/`summary` instead of recomputing/overwriting.
 - [x] **F3.8** `npm run build`.
 
-### ✅ Live verification F3
-- [ ] **F3-LV1 (readonly reports nothing):** with Fixture U untracked, run `antigravity_delegate { prompt: "List the .py files in bigmotion_pipeline/. Do not modify anything.", mode: "readonly" }`. After completion call `antigravity_result { jobId }`.
-  **Expect:** `changedFiles: []` (pre-fix returned `[".playwright-mcp/","bigmotion_pipeline/"]`).
-- [ ] **F3-LV2 (real change detected):** run a `worktree` delegate that creates one new file. **Expect:** `changedFiles` lists exactly that file, not the pre-existing untracked dirs.
-- [ ] **F3-LV3 (baseline persisted):** open the job's state JSON and confirm `baselineStatus` is recorded.
+### Live verification F3 — 2026-05-30 (Claude independent live test): 1 PASS, 1 FAIL, 1 partial → **F3 NEEDS A FIX**
+- [x] **F3-LV1 (readonly reports nothing):** ✅ readonly delegate `result` → `changedFiles: []` (pre-fix returned the untracked dirs). Readonly contract works.
+- [ ] **F3-LV2 (real change detected):** ❌ **FAIL.** `worktree` delegate created `bigmotion_pipeline/F3_TEST_MARKER.txt` (file confirmed present in the worktree), but `result.changedFiles` was `[]` instead of `["bigmotion_pipeline/F3_TEST_MARKER.txt"]`.
+  - **Root cause:** `gitChangedFiles` uses `git status --porcelain=v2 -z` WITHOUT `--untracked-files=all`. Git collapses an untracked directory to a single entry, so `baselineStatus` = `['.playwright-mcp/','bigmotion_pipeline/','vnccs_installed_models.json']`. A new file created *inside* the already-untracked `bigmotion_pipeline/` does not add a new top-level entry → `changedSince` subtracts the collapsed dir and the new file is masked. In worktree mode F2 copies the entire working set in as **untracked**, so this masks essentially ANY file an agent creates.
+  - **Fix:** add `--untracked-files=all` (`-uall`) to the porcelain status command in `gitChangedFiles` so individual untracked files are enumerated and diffable. Re-run F3-LV2 after the fix; expect exactly the new file.
+- [x] **F3-LV3 (baseline persisted):** ✅ `baselineStatus` IS recorded in the job state JSON — but it is the dir-collapsed form (see F3-LV2). Fix lands with the `-uall` change.
 
 ---
 
@@ -140,10 +137,11 @@ F2 implementation note (2026-05-30): Built on branch `fix/worktree-changedfiles-
 - [ ] **F4.4** (Optional polish) strip leading `^I will .*$` / `^I'll .*$` narration lines from delegate/execute `resultMarkdown` before returning, or capture only the final structured section.
 - [x] **F4.5** `npm run build`.
 
-### ✅ Live verification F4
-- [ ] **F4-LV1:** rerun the delegate from F3-LV1; call `antigravity_result`.
-  **Expect:** `summary` is the actual summary sentence (e.g. mentions the pipeline/modules), **not** `"I will list the contents…"`.
-- [ ] **F4-LV2:** rerun `antigravity_verify_plan` with a short plan; **Expect:** `summary` reflects the verdict ("Feasible…"), not the opening "I will search for…".
+### Live verification F4 — 2026-05-30 (Claude independent live test): narration suppressed ✅, section selection imperfect ⚠️ → **mostly works; one tweak recommended**
+- [x] **F4-LV1 (delegate, no `"I will"`):** ✅ summary no longer starts with `"I will…"`. ⚠️ but it returned a large intro block (the file list) rather than the concise `### Summary` section that exists lower in the output. Likely PTY collapses blank lines so the whole answer is one "paragraph" and the `^#{1,6}.*summary$` heading anchor misses a not-on-its-own-line heading.
+- [x] **F4-LV2 (verify_plan verdict):** ✅ narration (a long `"I will…"` preamble) was correctly skipped. ⚠️ but `summary` = the **"Unanswered Questions"** section (the last block) instead of the **"Verdict" (PASS WITH RECOMMENDATIONS)**. verify_plan emits no `Summary` heading and no JSON footer, so the "last meaningful paragraph" rule lands on the wrong section.
+  - **Recommended tweak:** treat `Verdict` (and `Executive Verdict`) as summary-equivalent headings in `extractSummary`; make the heading match tolerant of headings not on their own line / collapsed newlines; for plan/verify prefer the FIRST structured verdict section over the last paragraph. (Reviews already work via the JSON footer.)
+- Note: F4's primary goal — never returning the first-line `"I will…"` narration — is met across delegate, verify_plan, and (last session) review. The remaining issue is summary *quality/section choice*, not narration leakage.
 
 ---
 
