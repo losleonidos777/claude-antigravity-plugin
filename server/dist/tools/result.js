@@ -23,6 +23,7 @@ export async function antigravityResult(args = {}) {
         rawLogPath: updated.logPath,
         statePath: updated.statePath,
         worktreePath: updated.worktreePath,
-        branchName: updated.branchName
+        branchName: updated.branchName,
+        warning: updated.warning
     };
 }

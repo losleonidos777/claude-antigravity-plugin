@@ -33,6 +33,7 @@ export async function launchAntigravity(params) {
         executionRoot: params.executionRoot || projectRoot,
         worktreePath: params.worktreePath,
         branchName: params.branchName,
+        warning: params.warning,
         parsedTasks: params.parsedTasks
     });
     const finalPromptPath = path.join(state.artifactDir, "prompt.md");
@@ -69,7 +70,8 @@ export async function launchAntigravity(params) {
             logPath: updated.logPath,
             resultHint: `Use /antigravity:status ${updated.jobId} and /antigravity:result ${updated.jobId}`,
             worktreePath: updated.worktreePath,
-            branchName: updated.branchName
+            branchName: updated.branchName,
+            warning: updated.warning
         };
     }
     const running = store.update(state.jobId, { status: "running", startedAt: new Date().toISOString() });
@@ -90,5 +92,5 @@ export async function launchAntigravity(params) {
         patchPath,
         summary: result.stdout.split(/\r?\n/).find((line) => line.trim()) || result.stderr.split(/\r?\n/).find((line) => line.trim()) || result.status
     });
-    return { state: done, run: result };
+    return { state: done, run: result, warning: done.warning };
 }

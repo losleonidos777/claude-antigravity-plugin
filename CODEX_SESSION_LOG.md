@@ -110,3 +110,89 @@ Verification after assimilation:
 - F1 is implemented, built, and verified.
 - F2 has not been started.
 - Host fixture remains untracked; no staged Fixture T state remains.
+
+## F2 Session Start - 2026-05-30
+
+Branch: `fix/worktree-changedfiles-summary`
+
+Inputs read:
+
+- `CODEX_SESSION_START_F2.md`
+- `F1_TEST_FEEDBACK.md`
+- `CONNECTOR_FEEDBACK.md`
+- `FIX_TASKLIST.md` starting at Task F2
+- Prior session log research recommendations
+
+Baseline:
+
+- `git pull --ff-only origin master`: up to date.
+- `npm run build`: passed before F2 edits.
+- `npm test`: passed before F2 edits, 30 tests.
+
+## F2 Implementation - Worktree Full Working State
+
+Files changed:
+
+- `server/src/core/worktree.ts`
+- `server/src/core/job-store.ts`
+- `server/src/tools/common.ts`
+- `server/src/tools/delegate.ts`
+- `server/src/tools/tasks.ts`
+- `server/src/core/prompt-builder.ts`
+- `server/src/schemas/jobs.ts`
+- Generated `server/dist/**`
+
+Changes:
+
+- `prepareWorktree` still creates the linked worktree at `HEAD`, then now snapshots the user's dirty state into it.
+- Tracked modifications are replayed with `git diff --binary --no-ext-diff --no-textconv HEAD --`, written to a temp patch, checked with `git apply --check --whitespace=nowarn`, then applied in the worktree.
+- Untracked non-ignored files are enumerated with `git ls-files -z --others --exclude-standard` and copied into the worktree.
+- Untracked copy policy skips denied/unsafe paths, absolute/escaping paths, symlinks, non-files, files above 25 MB, and total copied bytes above 250 MB.
+- `prepareWorktree` returns a warning summary such as copied untracked file count and replay warnings.
+- Warning plumbing now flows through `LaunchParams`, `JobState`, `JobStore.create`, `delegate`, `execute_tasks`, and returned job launch objects.
+- Delegate and execute-task prompts now tell the agent to stop and report a blocker if a referenced file is missing in a worktree, rather than creating it from assumptions.
+
+Verification:
+
+- `npm run build`: passed after F2 edits.
+- Temp throwaway git repo sanity check passed:
+  - unstaged tracked edit appeared in worktree;
+  - staged tracked edit appeared in worktree;
+  - untracked file appeared in worktree;
+  - ignored file did not appear;
+  - warning included tracked replay and copied untracked counts.
+- `npm test`: passed after F2 edits, 30 tests.
+
+Pending:
+
+- Live F2 verification after plugin reload:
+  - `execute_tasks` worktree job sees `bigmotion_pipeline/run_all.py`;
+  - returned/persisted warning includes copied untracked files;
+  - dirty tracked fixture replay is visible;
+  - cleanup uses returned `worktreePath` and `branchName`.
+
+## F2 Three-Pass Review - 2026-05-30
+
+Pass 1 - Tasklist correctness:
+
+- Confirmed F2.1-F2.6 are implemented in source and rebuilt into `dist/`.
+- Confirmed tracked dirty replay uses binary patch generation plus `git apply --check`.
+- Confirmed untracked copy uses `git ls-files -z --others --exclude-standard`.
+- Confirmed delegate and execute-task launch results include worktree path, branch name, and warning.
+
+Pass 2 - Safety and edge cases:
+
+- Confirmed untracked copy skips denied/unsafe paths, absolute/escaping paths, symlinks, non-files, oversized files, and total copy overflow.
+- Confirmed tracked replay failure is warning-only, matching the F2 plan.
+- Confirmed the temporary patch directory is removed in a `finally` block.
+
+Pass 3 - Integration polish:
+
+- Found `antigravity_result` did not return the persisted `warning`, which would make post-launch inspection less useful.
+- Patched `server/src/tools/result.ts` so result output now includes `warning: updated.warning`.
+
+Verification after review:
+
+- `npm run build`: passed.
+- `npm test`: passed, 30 tests.
+- Temp throwaway git repo sanity check passed again for unstaged tracked, staged tracked, untracked, ignored, and warning behavior.

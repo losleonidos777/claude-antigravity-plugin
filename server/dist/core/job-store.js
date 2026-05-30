@@ -53,6 +53,7 @@ export class JobStore {
             artifactDir,
             worktreePath: params.worktreePath,
             branchName: params.branchName,
+            warning: params.warning,
             command: params.command || [],
             createdAt: now,
             updatedAt: now,

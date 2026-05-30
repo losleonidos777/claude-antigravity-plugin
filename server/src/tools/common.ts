@@ -17,6 +17,7 @@ export interface LaunchParams {
   executionRoot?: string;
   worktreePath?: string;
   branchName?: string;
+  warning?: string;
   parsedTasks?: JobState["parsedTasks"];
 }
 
@@ -48,6 +49,7 @@ export async function launchAntigravity(params: LaunchParams) {
     executionRoot: params.executionRoot || projectRoot,
     worktreePath: params.worktreePath,
     branchName: params.branchName,
+    warning: params.warning,
     parsedTasks: params.parsedTasks
   });
   const finalPromptPath = path.join(state.artifactDir, "prompt.md");
@@ -85,7 +87,8 @@ export async function launchAntigravity(params: LaunchParams) {
       logPath: updated.logPath,
       resultHint: `Use /antigravity:status ${updated.jobId} and /antigravity:result ${updated.jobId}`,
       worktreePath: updated.worktreePath,
-      branchName: updated.branchName
+      branchName: updated.branchName,
+      warning: updated.warning
     };
   }
 
@@ -107,5 +110,5 @@ export async function launchAntigravity(params: LaunchParams) {
     patchPath,
     summary: result.stdout.split(/\r?\n/).find((line) => line.trim()) || result.stderr.split(/\r?\n/).find((line) => line.trim()) || result.status
   });
-  return { state: done, run: result };
+  return { state: done, run: result, warning: done.warning };
 }

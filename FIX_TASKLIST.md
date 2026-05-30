@@ -66,11 +66,11 @@ F1 status note (2026-05-30): Built and live-verified through the compiled MCP st
 
 > **Why "full working state", not just untracked:** a `git worktree add … HEAD` checkout drops BOTH untracked files AND dirty tracked files (staged + unstaged edits). Fixing only untracked files (the original plan) still gives the agent a stale view of any modified committed file. Reproduce all three layers: HEAD + tracked modifications + untracked-non-ignored.
 
-- [ ] **F2.1 (tracked modifications)** After `git worktree add -b <branch> <path> HEAD` succeeds, replay the source's tracked changes into the worktree. Capture the combined diff of staged+unstaged tracked changes against HEAD in the source and apply it in the worktree:
+- [x] **F2.1 (tracked modifications)** After `git worktree add -b <branch> <path> HEAD` succeeds, replay the source's tracked changes into the worktree. Capture the combined diff of staged+unstaged tracked changes against HEAD in the source and apply it in the worktree:
   - `git -C projectRoot diff HEAD --binary` → write to a temp patch file → `git -C worktreePath apply --whitespace=nowarn <patch>`.
   - Guard: if the diff is empty, skip. If `apply` fails, do not abort — record it in `warning` ("could not replay N tracked modifications: …") so the caller knows the worktree may be stale.
   - **Caveat (index fidelity):** `git diff HEAD` collapses staged + unstaged into one patch, so the worktree reproduces the combined *working-tree content* but loses the staged-vs-unstaged distinction. This is fine for an agent that reads/edits files; only matters if the plugin ever needs to preserve the index state separately. Document it as a known limitation rather than solving it here.
-- [ ] **F2.2 (untracked files)** Enumerate untracked-but-not-ignored files **NUL-delimited** (paths can contain spaces/newlines):
+- [x] **F2.2 (untracked files)** Enumerate untracked-but-not-ignored files **NUL-delimited** (paths can contain spaces/newlines):
   ```ts
   const others = git(projectRoot, ["ls-files", "-z", "--others", "--exclude-standard"]);
   // split on "\0", drop empties
@@ -79,14 +79,16 @@ F1 status note (2026-05-30): Built and live-verified through the compiled MCP st
   - skip symlinks (or copy as-is per a documented policy) — don't follow them out of the tree;
   - cap per-file size (e.g. skip > 25 MB) and total copied bytes, recording skips in `warning`;
   - use `fs.copyFileSync`; on Windows beware MAX_PATH — prefer extended-length paths if the repo is deep.
-- [ ] **F2.3 (warning plumbing — NET-NEW code)** `prepareWorktree` returns a `warning` field, but [`delegate.ts:19-24`](server/src/tools/delegate.ts) / [`tasks.ts:17-22`](server/src/tools/tasks.ts) only destructure `executionRoot`/`worktreePath`/`branchName` — they do **not** capture `warning` at all today. Treat the whole chain below as new code, not a partial fix. Thread it end-to-end:
+- [x] **F2.3 (warning plumbing — NET-NEW code)** `prepareWorktree` returns a `warning` field, but [`delegate.ts:19-24`](server/src/tools/delegate.ts) / [`tasks.ts:17-22`](server/src/tools/tasks.ts) only destructure `executionRoot`/`worktreePath`/`branchName` — they do **not** capture `warning` at all today. Treat the whole chain below as new code, not a partial fix. Thread it end-to-end:
   - add `warning?: string` to `LaunchParams` in [`common.ts:11-21`](server/src/tools/common.ts) and to `JobState` in `jobs.ts`;
   - `delegate`/`execute_tasks` pass `prepared.warning` into `launchAntigravity`;
   - `launchAntigravity` persists it via `store.create`/`update` and includes it in the returned object;
   - confirm it appears in the MCP tool result.
-- [ ] **F2.4 (anti-fabrication guard)** In the worktree-mode delegate/execute prompt (`prompt-builder.ts`), add: *"If a file referenced by the task does not exist in this worktree, STOP and report it as a blocker — do NOT create it from assumptions."*
-- [ ] **F2.5 (naming reality — fixes test cleanup)** Note for tests/cleanup: the worktree id is `pending-${Date.now().toString(36)}`, so the branch is `antigravity/pending-…`, **not** `antigravity/<jobId>`. Always read the actual `worktreePath` / `branchName` from the tool result for cleanup — do not derive them from the `ag-…` jobId.
-- [ ] **F2.6** `npm run build`.
+- [x] **F2.4 (anti-fabrication guard)** In the worktree-mode delegate/execute prompt (`prompt-builder.ts`), add: *"If a file referenced by the task does not exist in this worktree, STOP and report it as a blocker — do NOT create it from assumptions."*
+- [x] **F2.5 (naming reality — fixes test cleanup)** Note for tests/cleanup: the worktree id is `pending-${Date.now().toString(36)}`, so the branch is `antigravity/pending-…`, **not** `antigravity/<jobId>`. Always read the actual `worktreePath` / `branchName` from the tool result for cleanup — do not derive them from the `ag-…` jobId.
+- [x] **F2.6** `npm run build`.
+
+F2 implementation note (2026-05-30): Built on branch `fix/worktree-changedfiles-summary`. `prepareWorktree` now replays tracked dirty state with `git diff --binary --no-ext-diff --no-textconv HEAD --` plus `git apply --check`, copies untracked non-ignored files with safety/size/symlink guards, and returns a warning summary. `delegate` and `execute_tasks` now persist/return the warning. Temp-repo sanity check passed for unstaged tracked, staged tracked, untracked, and ignored files. Live F2 verification remains pending after plugin reload.
 
 ### ✅ Live verification F2
 - [ ] **F2-LV1 (untracked source now visible):** with Fixture U untracked, run:
