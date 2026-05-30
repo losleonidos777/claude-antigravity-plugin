@@ -63,7 +63,7 @@ file (bigmotion_pipeline/download_music.py)
 
 The file exists and is readable (`delegate` read it fine seconds earlier), but the review prompt embedded **no file content** — only an empty diff.
 
-**Root cause.** [`server/src/core/prompt-builder.ts`](server/src/core/prompt-builder.ts) → `collectGitContext()` (lines 16–40) builds the entire review payload from `git diff`:
+**Root cause.** [`server/src/core/prompt-builder.ts`](../../server/src/core/prompt-builder.ts) → `collectGitContext()` (lines 16–40) builds the entire review payload from `git diff`:
 
 ```ts
 if (target === "file" && ref) diffArgs = ["diff", "--no-ext-diff", "--", ref];
@@ -74,7 +74,7 @@ diff || "(no diff)"
 
 - `git diff -- <path>` shows **nothing** for an **untracked** file (it's not in the index) and **nothing** for a **clean/unmodified** tracked file.
 - So for any untracked target — or any file with no uncommitted changes — the review agent is handed `(no diff)` and literally has nothing to review.
-- Compounding factor: there is **no fast-fail guard**. [`server/src/tools/review.ts`](server/src/tools/review.ts) launches the agent unconditionally even when the context is empty. The agent, told to "review the diff" with no diff, improvises by searching the disk and burns the full `maxRuntimeMs`.
+- Compounding factor: there is **no fast-fail guard**. [`server/src/tools/review.ts`](../../server/src/tools/review.ts) launches the agent unconditionally even when the context is empty. The agent, told to "review the diff" with no diff, improvises by searching the disk and burns the full `maxRuntimeMs`.
 
 **Why it doesn't affect `delegate`/`verify_plan`:** those prompts give the agent the repo root and let it explore the live working tree directly (no `git diff` dependency), so untracked files are visible to them.
 
@@ -96,7 +96,7 @@ worktree/bigmotion_pipeline/  → only PIPELINE_NOTES.md   (run_all.py ABSENT)
 main repo/bigmotion_pipeline/ → 12 .py files intact, NO PIPELINE_NOTES.md  (isolation correct)
 ```
 
-**Root cause.** [`server/src/core/worktree.ts`](server/src/core/worktree.ts) line 18:
+**Root cause.** [`server/src/core/worktree.ts`](../../server/src/core/worktree.ts) line 18:
 
 ```ts
 const add = git(projectRoot, ["worktree", "add", "-b", branchName, worktreePath, "HEAD"]);
@@ -106,7 +106,7 @@ const add = git(projectRoot, ["worktree", "add", "-b", branchName, worktreePath,
 
 > **Broader than untracked (raised in Codex review):** a `HEAD` checkout *also* drops **dirty tracked files** — any staged or unstaged modifications to committed files are absent from the worktree too. So even a fully-tracked repo with uncommitted edits gives the worktree agent a stale view. The fix must reproduce the user's *full working state* (HEAD + tracked modifications + untracked-non-ignored), not just copy untracked files.
 
-Note on naming (relevant to cleanup/tests): the worktree id is `pending-${Date.now().toString(36)}` ([`delegate.ts:20`](server/src/tools/delegate.ts), [`tasks.ts:18`](server/src/tools/tasks.ts)) — **not** the jobId. So the branch is `antigravity/pending-…` and differs from the `ag-…` jobId. Also, `prepareWorktree` returns a `warning` field that `delegate.ts`/`tasks.ts`/`common.ts` currently **drop** — it never reaches the tool result.
+Note on naming (relevant to cleanup/tests): the worktree id is `pending-${Date.now().toString(36)}` ([`delegate.ts:20`](../../server/src/tools/delegate.ts), [`tasks.ts:18`](../../server/src/tools/tasks.ts)) — **not** the jobId. So the branch is `antigravity/pending-…` and differs from the `ag-…` jobId. Also, `prepareWorktree` returns a `warning` field that `delegate.ts`/`tasks.ts`/`common.ts` currently **drop** — it never reaches the tool result.
 
 **Impact.** Any `delegate(mode:"worktree")` or `execute_tasks(mode:"worktree")` against uncommitted code operates on missing files. Worst case (as seen here) the agent silently fabricates a plausible-looking result. This is a **correctness/silent-data-loss class** issue, not just UX.
 
@@ -121,9 +121,9 @@ Note on naming (relevant to cleanup/tests): the worktree id is `pending-${Date.n
 
 **Symptom.** Every job — including pure **readonly** ones that changed nothing — returned `changedFiles: [".playwright-mcp/", "bigmotion_pipeline/"]`. Those are exactly the pre-existing untracked entries from `git status` at session start. The readonly delegate's own result body correctly said *"Files changed: None"*, directly contradicting the `changedFiles` field.
 
-**Root cause.** [`server/src/core/output-parser.ts`](server/src/core/output-parser.ts) → `gitChangedFiles()` (lines 88–105) runs `git status --short` and returns **every** entry — with no baseline. Called from:
-- [`server/src/tools/common.ts`](server/src/tools/common.ts) lines 67 and 99 (on job completion)
-- [`server/src/tools/result.ts`](server/src/tools/result.ts) line 12
+**Root cause.** [`server/src/core/output-parser.ts`](../../server/src/core/output-parser.ts) → `gitChangedFiles()` (lines 88–105) runs `git status --short` and returns **every** entry — with no baseline. Called from:
+- [`server/src/tools/common.ts`](../../server/src/tools/common.ts) lines 67 and 99 (on job completion)
+- [`server/src/tools/result.ts`](../../server/src/tools/result.ts) line 12
 
 There is no notion of "files changed *by this job*" — it's "everything dirty in the tree right now," which includes unrelated pre-existing untracked files and (for readonly jobs) changes the job never made.
 
@@ -139,15 +139,15 @@ There is no notion of "files changed *by this job*" — it's "everything dirty i
 **Symptom.** `result.summary` came back as e.g. *"I will list the contents of the bigmotion_pipeline directory to locate the source code files…"* — the agent's first streamed thought — instead of the `## Summary` / verdict section the prompt explicitly requests. The `resultMarkdown` also prepends all the `"I will examine X"` narration lines as noise before the real content.
 
 **Root cause.** Two places take the first non-empty stdout line as the summary:
-- [`server/src/tools/common.ts`](server/src/tools/common.ts) lines 76 & 108:
+- [`server/src/tools/common.ts`](../../server/src/tools/common.ts) lines 76 & 108:
   ```ts
   summary: result.stdout.split(/\r?\n/).find((line) => line.trim()) || ... || result.status
   ```
-- [`server/src/tools/result.ts`](server/src/tools/result.ts) line 15 (same first-line fallback on `resultMarkdown`).
+- [`server/src/tools/result.ts`](../../server/src/tools/result.ts) line 15 (same first-line fallback on `resultMarkdown`).
 
 The delegate/execute prompts ask the agent to end with a `- Summary` section; the review prompt asks for a JSON block with a `summary` field. Neither is parsed for the *persisted* summary — the code just grabs line 1, which is always narration.
 
-> **Scope nuance (from Codex review):** `parseReview()` ([`output-parser.ts:44-60`](server/src/core/output-parser.ts)) *does* extract the JSON `summary` correctly for the **live return value** of `review`/`adversarial_review` when the agent emits the JSON block. So Bug 4 primarily affects (a) the **persisted `job.summary`** written in `common.ts`, and (b) the summary for **non-review tools** (`delegate`, `execute_tasks`, `verify_plan`) and `result.ts`. The fix should target those paths; don't regress the working review-JSON path.
+> **Scope nuance (from Codex review):** `parseReview()` ([`output-parser.ts:44-60`](../../server/src/core/output-parser.ts)) *does* extract the JSON `summary` correctly for the **live return value** of `review`/`adversarial_review` when the agent emits the JSON block. So Bug 4 primarily affects (a) the **persisted `job.summary`** written in `common.ts`, and (b) the summary for **non-review tools** (`delegate`, `execute_tasks`, `verify_plan`) and `result.ts`. The fix should target those paths; don't regress the working review-JSON path.
 
 **Fix direction.** Add an `extractSummary(markdown)` helper in `output-parser.ts` that, in priority order:
 1. uses the `summary` field from the fenced JSON block (`extractJsonBlock` already exists), else
