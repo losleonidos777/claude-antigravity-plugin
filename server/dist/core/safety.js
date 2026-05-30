@@ -2,6 +2,8 @@ const SECRET_PATTERNS = [
     [/AIza[0-9A-Za-z_\-]{20,}/g, "[REDACTED_GOOGLE_API_KEY]"],
     [/ya29\.[0-9A-Za-z_\-.]+/g, "[REDACTED_GOOGLE_OAUTH_TOKEN]"],
     [/sk-[A-Za-z0-9_\-]{20,}/g, "[REDACTED_API_KEY]"],
+    [/AKIA[0-9A-Z]{16}/g, "[REDACTED_AWS_ACCESS_KEY_ID]"],
+    [/(aws_access_key_id|aws_secret_access_key|aws_session_token)\s*[:=]\s*[^\s'\"]+/gi, "$1=[REDACTED]"],
     [/Bearer\s+[A-Za-z0-9._\-]+/gi, "Bearer [REDACTED]"],
     [/(password|passwd|pwd|token|secret|api[_-]?key|credential)\s*[:=]\s*[^\s'\"]+/gi, "$1=[REDACTED]"],
     [/-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----/g, "[REDACTED_PRIVATE_KEY]"],
@@ -39,7 +41,16 @@ export function truncate(text, maxChars = 500_000) {
 export function normalizeRelativePath(candidate) {
     return candidate.replace(/\\/g, "/").replace(/^\.\//, "");
 }
+export function pathHasUnsafeSegment(candidate) {
+    if (candidate.includes("\0"))
+        return true;
+    return normalizeRelativePath(candidate)
+        .split("/")
+        .some((segment) => /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(segment));
+}
 export function pathIsDenied(candidate, extraDenied = []) {
+    if (pathHasUnsafeSegment(candidate))
+        return true;
     const p = normalizeRelativePath(candidate).toLowerCase();
     const rules = [...DEFAULT_DENYLIST, ...extraDenied.map((v) => v.toLowerCase())];
     return rules.some((rule) => {
