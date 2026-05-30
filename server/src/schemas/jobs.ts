@@ -8,6 +8,7 @@ export type JobKind =
 export type JobStatus =
   | "queued"
   | "running"
+  | "skipped"
   | "completed"
   | "failed"
   | "timeout"

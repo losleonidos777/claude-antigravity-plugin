@@ -20,6 +20,22 @@ The bridge never asks for or stores Google credentials, OAuth tokens, cookies, b
 
 Repository files, diffs, plans, and task lists are marked as untrusted in prompts sent to Antigravity. Antigravity is instructed to ignore conflicting instructions embedded in code, comments, docs, or diffs.
 
+## File review fallback
+
+Explicit file reviews can embed file contents when Git has no diff for the path,
+which makes clean and untracked files reviewable. The fallback is limited to
+explicit `target:file` requests and is guarded before content reaches the prompt:
+
+- the path must resolve inside the project root;
+- null-byte paths and Windows reserved device names are rejected;
+- symlinks are not embedded;
+- paths whose real path escapes the project root are rejected;
+- binary-looking and oversized files are skipped;
+- common token and credential patterns are redacted.
+
+If a broad working-tree or staged review has no diff, the tool returns
+`status: "skipped"` instead of dumping unrelated untracked files.
+
 ## Denied paths
 
 The default denylist includes:

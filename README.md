@@ -93,6 +93,14 @@ npx @modelcontextprotocol/inspector node server/dist/index.js
 
 The review tool is read-only. It collects git status and diff, marks repository content as untrusted, asks Antigravity for structured findings, and returns parsed findings plus log/artifact paths.
 
+For an explicitly scoped file review, the bridge also supports clean or untracked files:
+
+```text
+/antigravity:review target:file ref:src/new-module.ts
+```
+
+When Git has no diff for that file, the bridge embeds the file contents directly in the review prompt under a clearly labelled untrusted section. This fallback is deliberately scoped to explicit file reviews. A broad working-tree review with no tracked diff fast-fails with `status: "skipped"` instead of asking the model to wander the filesystem or review unrelated untracked directories.
+
 ### Adversarial review
 
 ```text
@@ -114,8 +122,28 @@ Modes:
 
 - `readonly`: investigation only
 - `suggest`: Antigravity may propose a patch artifact; Claude/user applies manually
-- `worktree`: Antigravity runs in an isolated git worktree when possible
+- `worktree`: Antigravity runs in an isolated git worktree when possible. The current
+  release creates a clean linked worktree from Git; if your task depends on
+  untracked files or uncommitted edits, prefer `readonly`/`suggest` or make sure the
+  relevant files are tracked/staged until the full working-state replay release lands.
 - `direct-edit`: intentionally unsupported
+
+## Best practices
+
+- Run `/antigravity:doctor` after installing or upgrading `agy`; the CLI command
+  surface is capability-detected.
+- Use explicit file review for new, clean, or untracked files:
+  `/antigravity:review target:file ref:path/to/file`.
+- Use broad `/antigravity:review` for tracked working-tree or staged diffs.
+  If there is no reviewable diff, the tool returns `skipped` immediately.
+- Treat `worktree` mode as isolation, not a magic copy of every local scratch file.
+  Until full working-state replay is released, stage or track files that the agent
+  must see, or use readonly investigation first.
+- Always inspect `logPath`, `artifactDir`, and `statePath` from tool results before
+  relying on an automated conclusion.
+- Do not put secrets in reviewed files, prompts, or task lists. The bridge redacts
+  common token patterns, but redaction is a safety net, not a substitute for secret
+  hygiene.
 
 ### Execute a task list
 
@@ -170,6 +198,8 @@ The transport choice is also visible per job in the log file:
 - CLI arguments are passed as arrays, never shell-concatenated
 - Logs are redacted for common token/secret patterns
 - Denied paths include `.env`, private keys, `.git/`, `node_modules/`, `vendor/`, `dist/`, and `build/`
+- File-content review fallback rejects unsafe path segments, symlinks, paths that
+  resolve outside the project root, binary-looking files, and oversized files
 - Repository files and diffs are labelled as untrusted input in prompts
 - Write-capable work happens in `suggest` artifacts or isolated worktrees
 
@@ -179,6 +209,12 @@ The transport choice is also visible per job in the log file:
 - If doctor cannot prove non-interactive support, configure `cli_template`.
 - Background jobs update state while the MCP server process remains alive. If Claude Code restarts mid-job, `/antigravity:status` reconciles stale running states by checking PID liveness and log/result markers.
 - Worktree mode requires a git repository and enough local permissions to create a worktree.
+- Worktree mode currently starts from committed Git state. Full replay of untracked
+  files and dirty tracked edits is planned next.
+- `changedFiles` currently reflects Git status at result time, so pre-existing
+  untracked files may appear in older jobs. Baseline-based attribution is planned.
+- Some Antigravity outputs may include opening narration before the final answer.
+  Summary extraction improvements are planned.
 
 ## Repository layout
 

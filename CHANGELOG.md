@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `antigravity_review` and `antigravity_adversarial_review` no longer time out
+  on explicitly scoped clean or untracked file targets. When `git diff` is empty
+  for `target:file`, the bridge embeds the file contents in a labelled untrusted
+  prompt section.
+- Empty broad review targets now fast-fail with `status: "skipped"` instead of
+  launching a doomed long-running review.
+- Review prompts now tell Antigravity to review the supplied context rather than
+  searching the filesystem for reviewed files.
+
+### Security
+
+- File-content fallback now rejects unsafe path segments, symlinks, paths whose
+  real path escapes the project root, binary-looking files, and oversized files.
+- Secret redaction now covers additional AWS credential patterns.
+
+### Documentation
+
+- Added best-practice guidance for explicit file review, skipped reviews,
+  worktree caveats, and artifact inspection.
+
 ## 0.2.0
 
 End-to-end live-verified release. Adds a PTY transport that bypasses the
