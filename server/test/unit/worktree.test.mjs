@@ -95,3 +95,41 @@ test('prepareWorktree skips replay entirely when every dirty tracked file is den
     fs.rmSync(worktreesDir, { recursive: true, force: true });
   }
 });
+
+test('prepareWorktree replays allowed paths literally so a glob-named file cannot re-include a denied file', async () => {
+  const root = setupRepo();
+  const worktreesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-wt-out-'));
+  let result;
+  // A file literally named "[.]env" is allowed (pathIsDenied checks for ".env"),
+  // but as a raw git pathspec "[.]env" is a glob that matches ".env". Brackets are
+  // legal on Windows and POSIX, so this reproduces the metacharacter leak cross-platform.
+  const globName = '[.]env';
+  try {
+    fs.writeFileSync(path.join(root, globName), 'PLACEHOLDER=committed\n');
+    git(root, ['add', '-A']); // add by worktree scan; avoids the same pathspec-glob trap
+    git(root, ['commit', '-q', '-m', 'add glob-named file']);
+
+    // Dirty both: the allowed glob-named file and the denied .env.
+    fs.writeFileSync(path.join(root, globName), 'PLACEHOLDER=dirty\n');
+    fs.writeFileSync(path.join(root, '.env'), 'SECRET=leaked-via-glob\n');
+
+    result = prepareWorktree(root, worktreesDir, 'wt-glob');
+    const wt = result.worktreePath;
+
+    // Allowed glob-named file IS replayed (matched literally).
+    assert.equal(readLF(path.join(wt, globName)), 'PLACEHOLDER=dirty\n');
+    // Denied .env is NOT replayed even though "[.]env" would glob-match it.
+    assert.equal(readLF(path.join(wt, '.env')), 'SECRET=committed\n');
+  } finally {
+    if (result) {
+      try {
+        git(root, ['worktree', 'remove', '--force', result.worktreePath]);
+      } catch {}
+      try {
+        git(root, ['branch', '-D', result.branchName]);
+      } catch {}
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(worktreesDir, { recursive: true, force: true });
+  }
+});
