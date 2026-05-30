@@ -16,11 +16,13 @@ export async function antigravityDelegate(args = {}) {
     let executionRoot = projectRoot;
     let worktreePath;
     let branchName;
+    let warning;
     if (mode === "worktree") {
         const prepared = prepareWorktree(projectRoot, projectPaths(projectRoot).worktreesDir, `pending-${Date.now().toString(36)}`);
         executionRoot = prepared.executionRoot;
         worktreePath = prepared.worktreePath;
         branchName = prepared.branchName;
+        warning = prepared.warning;
     }
     const prompt = buildDelegatePrompt({ projectRoot: executionRoot, task: String(args.prompt), mode, allowedPaths: args.allowedPaths, deniedPaths: args.deniedPaths });
     return launchAntigravity({
@@ -31,6 +33,7 @@ export async function antigravityDelegate(args = {}) {
         maxRuntimeMs: args.maxRuntimeMs,
         executionRoot,
         worktreePath,
-        branchName
+        branchName,
+        warning
     });
 }

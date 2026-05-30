@@ -43,6 +43,8 @@ export interface JobState {
   exitCode?: number | null;
   signal?: string | null;
   summary?: string;
+  warning?: string;
+  baselineStatus?: string[];
   changedFiles?: string[];
   parsedTasks?: Array<{
     id: string;

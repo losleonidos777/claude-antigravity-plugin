@@ -110,3 +110,243 @@ Verification after assimilation:
 - F1 is implemented, built, and verified.
 - F2 has not been started.
 - Host fixture remains untracked; no staged Fixture T state remains.
+
+## F2 Session Start - 2026-05-30
+
+Branch: `fix/worktree-changedfiles-summary`
+
+Inputs read:
+
+- `CODEX_SESSION_START_F2.md`
+- `F1_TEST_FEEDBACK.md`
+- `CONNECTOR_FEEDBACK.md`
+- `FIX_TASKLIST.md` starting at Task F2
+- Prior session log research recommendations
+
+Baseline:
+
+- `git pull --ff-only origin master`: up to date.
+- `npm run build`: passed before F2 edits.
+- `npm test`: passed before F2 edits, 30 tests.
+
+## F2 Implementation - Worktree Full Working State
+
+Files changed:
+
+- `server/src/core/worktree.ts`
+- `server/src/core/job-store.ts`
+- `server/src/tools/common.ts`
+- `server/src/tools/delegate.ts`
+- `server/src/tools/tasks.ts`
+- `server/src/core/prompt-builder.ts`
+- `server/src/schemas/jobs.ts`
+- Generated `server/dist/**`
+
+Changes:
+
+- `prepareWorktree` still creates the linked worktree at `HEAD`, then now snapshots the user's dirty state into it.
+- Tracked modifications are replayed with `git diff --binary --no-ext-diff --no-textconv HEAD --`, written to a temp patch, checked with `git apply --check --whitespace=nowarn`, then applied in the worktree.
+- Untracked non-ignored files are enumerated with `git ls-files -z --others --exclude-standard` and copied into the worktree.
+- Untracked copy policy skips denied/unsafe paths, absolute/escaping paths, symlinks, non-files, files above 25 MB, and total copied bytes above 250 MB.
+- `prepareWorktree` returns a warning summary such as copied untracked file count and replay warnings.
+- Warning plumbing now flows through `LaunchParams`, `JobState`, `JobStore.create`, `delegate`, `execute_tasks`, and returned job launch objects.
+- Delegate and execute-task prompts now tell the agent to stop and report a blocker if a referenced file is missing in a worktree, rather than creating it from assumptions.
+
+Verification:
+
+- `npm run build`: passed after F2 edits.
+- Temp throwaway git repo sanity check passed:
+  - unstaged tracked edit appeared in worktree;
+  - staged tracked edit appeared in worktree;
+  - untracked file appeared in worktree;
+  - ignored file did not appear;
+  - warning included tracked replay and copied untracked counts.
+- `npm test`: passed after F2 edits, 30 tests.
+
+Pending:
+
+- Live F2 verification after plugin reload:
+  - `execute_tasks` worktree job sees `bigmotion_pipeline/run_all.py`;
+  - returned/persisted warning includes copied untracked files;
+  - dirty tracked fixture replay is visible;
+  - cleanup uses returned `worktreePath` and `branchName`.
+
+## F2 Three-Pass Review - 2026-05-30
+
+Pass 1 - Tasklist correctness:
+
+- Confirmed F2.1-F2.6 are implemented in source and rebuilt into `dist/`.
+- Confirmed tracked dirty replay uses binary patch generation plus `git apply --check`.
+- Confirmed untracked copy uses `git ls-files -z --others --exclude-standard`.
+- Confirmed delegate and execute-task launch results include worktree path, branch name, and warning.
+
+Pass 2 - Safety and edge cases:
+
+- Confirmed untracked copy skips denied/unsafe paths, absolute/escaping paths, symlinks, non-files, oversized files, and total copy overflow.
+- Confirmed tracked replay failure is warning-only, matching the F2 plan.
+- Confirmed the temporary patch directory is removed in a `finally` block.
+
+Pass 3 - Integration polish:
+
+- Found `antigravity_result` did not return the persisted `warning`, which would make post-launch inspection less useful.
+- Patched `server/src/tools/result.ts` so result output now includes `warning: updated.warning`.
+
+Verification after review:
+
+- `npm run build`: passed.
+- `npm test`: passed, 30 tests.
+- Temp throwaway git repo sanity check passed again for unstaged tracked, staged tracked, untracked, ignored, and warning behavior.
+
+## F3/F4 Session - 2026-05-30
+
+Branch: `fix/worktree-changedfiles-summary`
+
+Inputs read:
+
+- `CODEX_SESSION_START_F3.md`
+- `F2_TEST_FEEDBACK.md`
+- `F1_TEST_FEEDBACK.md`
+- `CONNECTOR_FEEDBACK.md`
+- `FIX_TASKLIST.md` starting at Task F3
+- Prior session log and deep-research notes
+
+Baseline:
+
+- Confirmed already on `fix/worktree-changedfiles-summary`.
+- `npm run build`: passed before F3/F4 edits.
+- `npm test`: passed before F3/F4 edits, 30 tests.
+
+F3 implementation:
+
+- Added `baselineStatus?: string[]` to `JobState` and `JobStore.create`.
+- `launchAntigravity` now captures a baseline from the actual execution root before the agent starts. For worktree jobs this is after F2 worktree preparation because `delegate`/`execute_tasks` prepare the worktree before calling `launchAntigravity`.
+- `gitChangedFiles` now uses stable `git status --porcelain=v2 -z` parsing and preserves renamed target paths and paths with spaces.
+- Added `changedSince(cwd, baseline)` path-set attribution and documented the path-only caveat: pre-existing dirty files modified again may be missed without content signatures.
+- Completion and result rereads now force `changedFiles: []` for readonly jobs.
+- `antigravity_result` now avoids recomputing or overwriting stored `changedFiles`/`summary` when a terminal job's execution root has been removed.
+
+F4 implementation:
+
+- Added `extractSummary(markdown)` with priority: validated JSON footer summary, markdown `## Summary` section, inline `Summary:`, last meaningful non-boilerplate paragraph, then neutral log fallback.
+- Replaced first-line summary assignment in background and foreground completion paths with `extractSummary(readResult(..., true))`.
+- `antigravity_result` now overwrites stale narration summaries such as `I will...` / `I'll...` with the extracted final summary.
+
+Verification:
+
+- `npm test`: passed after F3/F4 edits, 39 tests.
+- Added focused coverage for baseline exclusion, rename target paths, paths with spaces, readonly `changedFiles: []`, removed-worktree no-clobber, stale narration summary overwrite, JSON summary extraction, summary-heading extraction, boilerplate filtering, and bridge-log fallback.
+
+Pause point:
+
+- F3/F4 are built and unit-verified. Per the handoff, pause here for live re-test after plugin reload before F6/merge.
+
+## F3/F4 Three-Pass Review - 2026-05-30
+
+Pass 1 - Requirement correctness:
+
+- Re-read the F3/F4 diff against the tasklist requirements.
+- Confirmed baseline capture happens in `launchAntigravity` against the actual `execRoot`, which is the prepared worktree for worktree-mode callers.
+- Confirmed readonly jobs force `changedFiles: []` in completion and `antigravity_result`.
+- Confirmed terminal jobs with a missing execution root return stored `changedFiles`/`summary` instead of recomputing.
+
+Pass 2 - Parser and edge-case hardening:
+
+- Found `extractJsonBlock` still trusted the first fenced JSON block, while F4 requires the validated JSON footer to win.
+- Fixed `extractJsonBlock` to parse fenced JSON blocks from the end, returning the last valid JSON payload.
+- Added a regression test proving the final JSON footer beats an earlier example JSON block and markdown fallback.
+
+Pass 3 - Production readiness:
+
+- `npm test`: passed, 40 tests.
+- `npm run smoke`: passed.
+- Searched for old raw `git status --short` usage and first-line summary assignments in `server/src` and `server/dist`; no stale source paths remain.
+- Generated `server/dist/**` is rebuilt.
+- Remaining gate before merge is the requested live plugin reload/re-test sweep.
+
+## FX Follow-up After F3/F4 Live Test - 2026-05-30
+
+Input read:
+
+- `F3_F4_TEST_FEEDBACK.md` in full.
+
+Branch:
+
+- Stayed on `fix/worktree-changedfiles-summary` at/after `a2bbeda`.
+
+Fixes:
+
+- FX1: `gitChangedFiles` now runs `git status --porcelain=v2 --untracked-files=all -z`, so baseline/current snapshots enumerate individual untracked files instead of collapsed untracked directories.
+- FX2: Added a regression test for creating a file inside an already-untracked directory; `changedSince` now returns the new nested file.
+- FX3: `extractSummary` now treats `Verdict` / `Executive Verdict` headings as summary-equivalent and normalizes glued markdown headings such as `done:### Summary`.
+- FX4: Added regression tests for verdict-before-trailing-questions output and glued `### Summary` headings.
+
+Verification:
+
+- `npm run build`: passed.
+- `npm test`: passed, 43 tests.
+- `npm run smoke`: passed.
+
+Pause point:
+
+- FX1-FX5 are complete and rebuilt into `server/dist/**`. Pause here for plugin reload + live re-test before F6/merge.
+
+## FX6 Follow-up Before F6 - 2026-05-30
+
+Input read:
+
+- `CODEX_SESSION_START_F6.md` in full.
+
+Branch:
+
+- Stayed on `fix/worktree-changedfiles-summary` after `ba8c80e`.
+
+Fixes:
+
+- FX6.1: `normalizeMarkdownHeadings` now also isolates summary/verdict headings glued to following text, e.g. `## SummaryThe...` becomes `## Summary\nThe...`.
+- FX6.2: Added regression tests for glued-after `## SummaryThe...` extraction and a guard that `## Summary of changes` is not split as `## Summary`.
+
+Verification:
+
+- Baseline `npm run build`: passed.
+- Baseline `npm test`: passed, 43 tests.
+- After FX6 `npm run build`: passed.
+- After FX6 `npm test`: passed, 45 tests.
+
+Pause point:
+
+- FX6 is complete and rebuilt into `server/dist/**`. Pause here for plugin reload + live re-test before F6 changelog/commit/PR.
+
+## F6 Merge Readiness - 2026-05-31 (Claude, Codex daily limit hit)
+
+Context:
+
+- FX6 was implemented, committed (`fe37762 "fix f6"`), and live-verified green in a
+  prior session (readonly summary = `## Summary` body; verify_plan = Verdict;
+  worktree create-file attributes exactly the new file; broad review = skip).
+- Codex hit its daily limit before F6, so Claude completed the doc/git-only F6 phase.
+
+F6.1 verification (no source changes):
+
+- `npm run build`: passed.
+- `npm test`: passed, 45 tests.
+- `npm run smoke`: passed.
+
+F6.2 CHANGELOG:
+
+- Extended the `Unreleased` → `Fixed` section to cover the full effort: worktree
+  full-working-state reproduction (F2), baseline-relative `changedFiles`
+  attribution with `--untracked-files=all` (F3 + FX1/FX2), and the
+  `extractSummary` JSON-footer > Summary/Verdict-heading (glued before/after
+  tolerant, FX3/FX6) > boilerplate-filtered-last-paragraph chain with
+  stale-narration overwrite (F4). Documented the staged-vs-unstaged collapse
+  caveat and the path-only set-difference caveat.
+
+F6.3 commit:
+
+- Committed the CHANGELOG update plus the FIX_TASKLIST F4-LV1 → PASS flip.
+
+F6.4 PR:
+
+- Opened a PR `fix/worktree-changedfiles-summary` → `master` summarising
+  F2/F3/F4 + FX1/FX6, linking CONNECTOR_FEEDBACK.md and the F*_TEST_FEEDBACK.md
+  files. NOT self-merged — left for the user's review.

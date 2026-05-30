@@ -13,11 +13,13 @@ export async function antigravityExecuteTasks(args = {}) {
     let executionRoot = projectRoot;
     let worktreePath;
     let branchName;
+    let warning;
     if (mode === "worktree") {
         const prepared = prepareWorktree(projectRoot, projectPaths(projectRoot).worktreesDir, `pending-${Date.now().toString(36)}`);
         executionRoot = prepared.executionRoot;
         worktreePath = prepared.worktreePath;
         branchName = prepared.branchName;
+        warning = prepared.warning;
     }
     const built = buildExecuteTasksPrompt({
         projectRoot: executionRoot,
@@ -35,6 +37,7 @@ export async function antigravityExecuteTasks(args = {}) {
         executionRoot,
         worktreePath,
         branchName,
+        warning,
         parsedTasks: built.parsedTasks
     });
     return { ...launched, parsedTasks: built.parsedTasks };
