@@ -171,6 +171,25 @@ test('extractSummary tolerates headings glued to preceding text', () => {
   assert.equal(extractSummary(markdown), 'The bigmotion_pipeline directory contains 12 Python scripts.');
 });
 
+test('extractSummary tolerates summary heading glued to following text', () => {
+  const markdown = [
+    'Verbose intro about files and the ComfyUI server.## SummaryThe bigmotion_pipeline directory contains 12 files.',
+    '### Files changed',
+    '- None'
+  ].join('\n');
+  assert.equal(extractSummary(markdown), 'The bigmotion_pipeline directory contains 12 files.');
+});
+
+test('extractSummary does not split legitimate multi-word summary headings', () => {
+  const markdown = [
+    '## Summary of changes',
+    'The parser now handles edge-case markdown headings.',
+    '',
+    'Final answer paragraph.'
+  ].join('\n');
+  assert.equal(extractSummary(markdown), 'Final answer paragraph.');
+});
+
 test('extractSummary skips narration and trailing boilerplate', () => {
   const markdown = [
     'I will inspect the repository before answering.',

@@ -71,7 +71,8 @@ function looksLogOnly(markdown: string): boolean {
 }
 
 function normalizeMarkdownHeadings(markdown: string): string {
-  return markdown.replace(/([^\r\n#])(#{1,6}\s+)/g, "$1\n$2");
+  const beforeHeading = markdown.replace(/([^\r\n#])(#{1,6}\s+)/g, "$1\n$2");
+  return beforeHeading.replace(/(#{1,6}\s*(?:executive\s+)?(?:summary|verdict))(?=[A-Za-z])/gi, "$1\n");
 }
 
 function isSummaryHeading(line: string): boolean {

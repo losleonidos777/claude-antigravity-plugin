@@ -113,12 +113,11 @@ F2 implementation note (2026-05-30): Built on branch `fix/worktree-changedfiles-
 - [x] **F3.7 (don't clobber a good record on re-read)** `result.ts` recomputes `changedFiles` on **every** call ([`result.ts:12-15`](server/src/tools/result.ts)). For a finished worktree job whose worktree was later removed, `changedSince` can return `[]` and overwrite a previously-correct stored value. Guard: if the job is in a terminal state AND the execution root no longer exists (`!fs.existsSync(executionRoot)`), return the **stored** `changedFiles`/`summary` instead of recomputing/overwriting.
 - [x] **F3.8** `npm run build`.
 
-### Live verification F3 — 2026-05-30 (Claude independent live test): 1 PASS, 1 FAIL, 1 partial → **F3 NEEDS A FIX**
-- [x] **F3-LV1 (readonly reports nothing):** ✅ readonly delegate `result` → `changedFiles: []` (pre-fix returned the untracked dirs). Readonly contract works.
-- [ ] **F3-LV2 (real change detected):** ❌ **FAIL.** `worktree` delegate created `bigmotion_pipeline/F3_TEST_MARKER.txt` (file confirmed present in the worktree), but `result.changedFiles` was `[]` instead of `["bigmotion_pipeline/F3_TEST_MARKER.txt"]`.
-  - **Root cause:** `gitChangedFiles` uses `git status --porcelain=v2 -z` WITHOUT `--untracked-files=all`. Git collapses an untracked directory to a single entry, so `baselineStatus` = `['.playwright-mcp/','bigmotion_pipeline/','vnccs_installed_models.json']`. A new file created *inside* the already-untracked `bigmotion_pipeline/` does not add a new top-level entry → `changedSince` subtracts the collapsed dir and the new file is masked. In worktree mode F2 copies the entire working set in as **untracked**, so this masks essentially ANY file an agent creates.
-  - **Fix:** add `--untracked-files=all` (`-uall`) to the porcelain status command in `gitChangedFiles` so individual untracked files are enumerated and diffable. Re-run F3-LV2 after the fix; expect exactly the new file.
-- [x] **F3-LV3 (baseline persisted):** ✅ `baselineStatus` IS recorded in the job state JSON — but it is the dir-collapsed form (see F3-LV2). Fix lands with the `-uall` change.
+### Live verification F3 — RE-TESTED 2026-05-30 after FX1 (`--untracked-files=all`): **ALL PASS** ✅
+- [x] **F3-LV1 (readonly reports nothing):** ✅ readonly delegate `result` → `changedFiles: []`.
+- [x] **F3-LV2 (real change detected):** ✅ **FIXED.** After FX1 added `--untracked-files=all`, the `worktree` delegate that created `bigmotion_pipeline/F3_TEST_MARKER.txt` now returns `changedFiles: ["bigmotion_pipeline/F3_TEST_MARKER.txt"]` (exactly the new file, no collapsed dir). The earlier FAIL was the untracked-dir-collapse described below.
+  - *(historical root cause)* `gitChangedFiles` used `git status --porcelain=v2 -z` without `--untracked-files=all`; git collapsed an untracked dir to one entry so files created inside it were masked. Fixed at `output-parser.ts:192`.
+- [x] **F3-LV3 (baseline persisted):** ✅ `baselineStatus` recorded; now enumerates individual untracked files.
 
 ---
 
@@ -137,11 +136,11 @@ F2 implementation note (2026-05-30): Built on branch `fix/worktree-changedfiles-
 - [ ] **F4.4** (Optional polish) strip leading `^I will .*$` / `^I'll .*$` narration lines from delegate/execute `resultMarkdown` before returning, or capture only the final structured section.
 - [x] **F4.5** `npm run build`.
 
-### Live verification F4 — 2026-05-30 (Claude independent live test): narration suppressed ✅, section selection imperfect ⚠️ → **mostly works; one tweak recommended**
-- [x] **F4-LV1 (delegate, no `"I will"`):** ✅ summary no longer starts with `"I will…"`. ⚠️ but it returned a large intro block (the file list) rather than the concise `### Summary` section that exists lower in the output. Likely PTY collapses blank lines so the whole answer is one "paragraph" and the `^#{1,6}.*summary$` heading anchor misses a not-on-its-own-line heading.
-- [x] **F4-LV2 (verify_plan verdict):** ✅ narration (a long `"I will…"` preamble) was correctly skipped. ⚠️ but `summary` = the **"Unanswered Questions"** section (the last block) instead of the **"Verdict" (PASS WITH RECOMMENDATIONS)**. verify_plan emits no `Summary` heading and no JSON footer, so the "last meaningful paragraph" rule lands on the wrong section.
-  - **Recommended tweak:** treat `Verdict` (and `Executive Verdict`) as summary-equivalent headings in `extractSummary`; make the heading match tolerant of headings not on their own line / collapsed newlines; for plan/verify prefer the FIRST structured verdict section over the last paragraph. (Reviews already work via the JSON footer.)
-- Note: F4's primary goal — never returning the first-line `"I will…"` narration — is met across delegate, verify_plan, and (last session) review. The remaining issue is summary *quality/section choice*, not narration leakage.
+### Live verification F4 — RE-TESTED 2026-05-30 after FX3 (Verdict headings + glued-heading): **PASS** (one minor edge remains, non-blocking)
+- [x] **F4-LV2 (verify_plan verdict):** ✅ **FIXED.** `summary` now = the Verdict: `"**PASS WITH RECOMMENDATIONS** The plan is highly feasible…"` (previously grabbed "Unanswered Questions"). The `Verdict`/`Executive Verdict` heading recognition works; narration preamble skipped.
+- [x] **F4 (worktree job summary):** ✅ clean `### Summary` extracted (`"We have created exactly one new file…"`) with the `"I will…"` preamble skipped — the glued-before-heading handling works.
+- [~] **F4-LV1 (readonly delegate `## Summary`):** ⚠️ PARTIAL/minor. Narration-free ✅, but this run still returned the verbose intro instead of the `## Summary` section — because that output glued the heading to the *following* text with no newline (`…ComfyUI server.## SummaryThe bigmotion_pipeline…`). FX3 handles a heading glued to *preceding* text and headings on their own line; the heading-title-glued-to-following-content case isn't isolated. **Non-blocking:** the summary is still informative and narration-free; affects only some PTY-formatted delegate outputs. Optional future tweak: also split on `(#{1,6}\s*\w+?)(?=[A-Z])` / detect a heading word immediately followed by sentence text.
+- Note: F4's primary goal — never returning the first-line `"I will…"` narration — is met across delegate, verify_plan, worktree, and review. Verdict/clean-heading/JSON-footer cases all extract the right section now.
 
 ---
 

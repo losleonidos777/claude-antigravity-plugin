@@ -50,7 +50,8 @@ function looksLogOnly(markdown) {
     return lines.length > 0 && lines.some(isBridgeLog) && !extractJsonBlock(markdown) && !/^#{1,6}\s*.*(?:summary|verdict)\s*$/im.test(normalized);
 }
 function normalizeMarkdownHeadings(markdown) {
-    return markdown.replace(/([^\r\n#])(#{1,6}\s+)/g, "$1\n$2");
+    const beforeHeading = markdown.replace(/([^\r\n#])(#{1,6}\s+)/g, "$1\n$2");
+    return beforeHeading.replace(/(#{1,6}\s*(?:executive\s+)?(?:summary|verdict))(?=[A-Za-z])/gi, "$1\n");
 }
 function isSummaryHeading(line) {
     return /^#{1,6}\s*.*(?:summary|verdict)\s*$/i.test(line.trim());

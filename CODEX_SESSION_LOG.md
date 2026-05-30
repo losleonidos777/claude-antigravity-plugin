@@ -289,3 +289,29 @@ Verification:
 Pause point:
 
 - FX1-FX5 are complete and rebuilt into `server/dist/**`. Pause here for plugin reload + live re-test before F6/merge.
+
+## FX6 Follow-up Before F6 - 2026-05-30
+
+Input read:
+
+- `CODEX_SESSION_START_F6.md` in full.
+
+Branch:
+
+- Stayed on `fix/worktree-changedfiles-summary` after `ba8c80e`.
+
+Fixes:
+
+- FX6.1: `normalizeMarkdownHeadings` now also isolates summary/verdict headings glued to following text, e.g. `## SummaryThe...` becomes `## Summary\nThe...`.
+- FX6.2: Added regression tests for glued-after `## SummaryThe...` extraction and a guard that `## Summary of changes` is not split as `## Summary`.
+
+Verification:
+
+- Baseline `npm run build`: passed.
+- Baseline `npm test`: passed, 43 tests.
+- After FX6 `npm run build`: passed.
+- After FX6 `npm test`: passed, 45 tests.
+
+Pause point:
+
+- FX6 is complete and rebuilt into `server/dist/**`. Pause here for plugin reload + live re-test before F6 changelog/commit/PR.
