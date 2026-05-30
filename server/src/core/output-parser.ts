@@ -14,19 +14,112 @@ export interface ReviewFinding {
 }
 
 export function extractJsonBlock(markdown: string): any | null {
-  const match = markdown.match(/```json\s*([\s\S]*?)```/i);
-  if (!match) return null;
-  try {
-    return JSON.parse(match[1]);
-  } catch {
-    return null;
+  const matches = Array.from(markdown.matchAll(/```json\s*([\s\S]*?)```/gi));
+  for (let i = matches.length - 1; i >= 0; i--) {
+    try {
+      return JSON.parse(matches[i][1]);
+    } catch {
+      // Keep walking backward; earlier fences may still contain the final valid payload.
+    }
   }
+  return null;
 }
 
 export function firstMeaningfulParagraph(markdown: string): string {
   const cleaned = markdown.replace(/```[\s\S]*?```/g, "").trim();
   const para = cleaned.split(/\n\s*\n/).find((p) => p.trim().length > 0) || cleaned.slice(0, 500);
   return truncate(para.replace(/\s+/g, " ").trim(), 1200);
+}
+
+function compactText(text: string, limit = 1200): string {
+  return truncate(text.replace(/\s+/g, " ").trim(), limit);
+}
+
+function stripFences(markdown: string): string {
+  return markdown.replace(/```[\s\S]*?```/g, "").trim();
+}
+
+function isNarration(line: string): boolean {
+  return /^(?:I will|I'll)\b/i.test(line.trim());
+}
+
+function isBoilerplateHeading(line: string): boolean {
+  return /^(?:#{1,6}\s*)?(?:[-*]\s*)?(?:files changed|commands run|tests run|remaining risks|human review needed)\s*:?\s*$/i.test(line.trim());
+}
+
+function isBridgeLog(line: string): boolean {
+  return /^\[antigravity-bridge\]/i.test(line.trim());
+}
+
+function neutralLogSummary(markdown: string): string {
+  const cleaned = stripFences(markdown);
+  const line =
+    cleaned
+      .split(/\r?\n/)
+      .map((entry) => entry.trim())
+      .find((entry) => entry && !isBridgeLog(entry) && !isNarration(entry)) || "";
+  return line ? compactText(line, 240) : "Result output is available in the raw log.";
+}
+
+function looksLogOnly(markdown: string): boolean {
+  const lines = markdown
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines.length > 0 && lines.some(isBridgeLog) && !extractJsonBlock(markdown) && !/^#{1,6}\s*.*summary\s*$/im.test(markdown);
+}
+
+function extractSummaryHeading(cleaned: string): string {
+  const lines = cleaned.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^#{1,6}\s*.*summary\s*$/i.test(lines[i].trim())) continue;
+    const section: string[] = [];
+    for (let j = i + 1; j < lines.length; j++) {
+      if (/^#{1,6}\s+\S/.test(lines[j])) break;
+      section.push(lines[j]);
+    }
+    const text = section.join("\n").trim();
+    if (text) return compactText(text);
+  }
+  return "";
+}
+
+function extractInlineSummary(cleaned: string): string {
+  const match = cleaned.match(/(?:^|\n)\s*summary\s*:\s*([\s\S]*?)(?=\n\s*(?:#{1,6}\s+\S|[A-Z][A-Za-z ]{2,40}\s*:)|$)/i);
+  return match ? compactText(match[1]) : "";
+}
+
+function lastMeaningfulParagraph(cleaned: string): string {
+  const blocks = cleaned
+    .split(/\n\s*\n/)
+    .map((block) =>
+      block
+        .split(/\r?\n/)
+        .filter((line) => !isNarration(line) && !isBridgeLog(line))
+        .join("\n")
+        .trim()
+    )
+    .filter(Boolean)
+    .filter((block) => !isBoilerplateHeading(block.split(/\r?\n/)[0] || ""))
+    .filter((block) => !/^(?:none|n\/a)$/i.test(block.trim()));
+  return blocks.length ? compactText(blocks[blocks.length - 1]) : "";
+}
+
+export function extractSummary(markdown: string): string {
+  const json = extractJsonBlock(markdown);
+  if (json && typeof json.summary === "string" && json.summary.trim()) {
+    return compactText(json.summary);
+  }
+
+  if (looksLogOnly(markdown)) return neutralLogSummary(markdown);
+
+  const cleaned = stripFences(markdown);
+  return (
+    extractSummaryHeading(cleaned) ||
+    extractInlineSummary(cleaned) ||
+    lastMeaningfulParagraph(cleaned) ||
+    neutralLogSummary(markdown)
+  );
 }
 
 function normalizeSeverity(value: string): ReviewFinding["severity"] {
@@ -87,21 +180,58 @@ export function readResult(resultPath?: string, logPath?: string, includeRaw = f
 
 export function gitChangedFiles(cwd: string): string[] {
   try {
-    const res = childProcess.spawnSync("git", ["status", "--short"], { cwd, encoding: "utf8", timeout: 5000, windowsHide: true });
-    return String(res.stdout || "")
-      .split(/\r?\n/)
-      .filter((line) => line.length > 0)
-      .map((line) => {
-        // git status --short format is "XY filename" (X and Y are status codes, always 2 chars; column 3 is space).
-        // For renames the path is "old -> new" — keep the full segment after column 3 and let the consumer parse.
-        const path = line.slice(3).replace(/\s+$/, "");
-        const renameSplit = path.indexOf(" -> ");
-        return renameSplit === -1 ? path : path.slice(renameSplit + 4);
-      })
-      .filter(Boolean);
+    const res = childProcess.spawnSync("git", ["status", "--porcelain=v2", "-z"], {
+      cwd,
+      encoding: "buffer",
+      timeout: 5000,
+      windowsHide: true
+    });
+    return parsePorcelainV2Paths(res.stdout || Buffer.alloc(0));
   } catch {
     return [];
   }
+}
+
+function pathAfterFields(record: string, fieldCountBeforePath: number): string {
+  let idx = -1;
+  for (let i = 0; i < fieldCountBeforePath; i++) {
+    idx = record.indexOf(" ", idx + 1);
+    if (idx === -1) return "";
+  }
+  return record.slice(idx + 1);
+}
+
+function parsePorcelainV2Paths(stdout: Buffer): string[] {
+  const records = stdout.toString().split("\0");
+  const paths: string[] = [];
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
+    if (!record) continue;
+    const type = record[0];
+    if (type === "?" || type === "!") {
+      const filePath = record.slice(2);
+      if (filePath) paths.push(filePath);
+      continue;
+    }
+    if (type === "1" || type === "u") {
+      const filePath = pathAfterFields(record, type === "1" ? 8 : 10);
+      if (filePath) paths.push(filePath);
+      continue;
+    }
+    if (type === "2") {
+      const filePath = pathAfterFields(record, 9);
+      if (filePath) paths.push(filePath);
+      i += 1;
+    }
+  }
+  return paths;
+}
+
+export function changedSince(cwd: string, baseline: string[]): string[] {
+  const before = new Set(baseline);
+  // Path-only attribution removes launch-time dirty noise, but it can miss a baseline-dirty file
+  // that the job edits again. Content signatures would be needed for that stronger contract.
+  return gitChangedFiles(cwd).filter((filePath) => !before.has(filePath));
 }
 
 export function writePatchIfAny(cwd: string, patchPath: string): string | undefined {

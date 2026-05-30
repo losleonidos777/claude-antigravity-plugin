@@ -54,6 +54,7 @@ export class JobStore {
             worktreePath: params.worktreePath,
             branchName: params.branchName,
             warning: params.warning,
+            baselineStatus: params.baselineStatus,
             command: params.command || [],
             createdAt: now,
             updatedAt: now,

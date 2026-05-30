@@ -196,3 +196,69 @@ Verification after review:
 - `npm run build`: passed.
 - `npm test`: passed, 30 tests.
 - Temp throwaway git repo sanity check passed again for unstaged tracked, staged tracked, untracked, ignored, and warning behavior.
+
+## F3/F4 Session - 2026-05-30
+
+Branch: `fix/worktree-changedfiles-summary`
+
+Inputs read:
+
+- `CODEX_SESSION_START_F3.md`
+- `F2_TEST_FEEDBACK.md`
+- `F1_TEST_FEEDBACK.md`
+- `CONNECTOR_FEEDBACK.md`
+- `FIX_TASKLIST.md` starting at Task F3
+- Prior session log and deep-research notes
+
+Baseline:
+
+- Confirmed already on `fix/worktree-changedfiles-summary`.
+- `npm run build`: passed before F3/F4 edits.
+- `npm test`: passed before F3/F4 edits, 30 tests.
+
+F3 implementation:
+
+- Added `baselineStatus?: string[]` to `JobState` and `JobStore.create`.
+- `launchAntigravity` now captures a baseline from the actual execution root before the agent starts. For worktree jobs this is after F2 worktree preparation because `delegate`/`execute_tasks` prepare the worktree before calling `launchAntigravity`.
+- `gitChangedFiles` now uses stable `git status --porcelain=v2 -z` parsing and preserves renamed target paths and paths with spaces.
+- Added `changedSince(cwd, baseline)` path-set attribution and documented the path-only caveat: pre-existing dirty files modified again may be missed without content signatures.
+- Completion and result rereads now force `changedFiles: []` for readonly jobs.
+- `antigravity_result` now avoids recomputing or overwriting stored `changedFiles`/`summary` when a terminal job's execution root has been removed.
+
+F4 implementation:
+
+- Added `extractSummary(markdown)` with priority: validated JSON footer summary, markdown `## Summary` section, inline `Summary:`, last meaningful non-boilerplate paragraph, then neutral log fallback.
+- Replaced first-line summary assignment in background and foreground completion paths with `extractSummary(readResult(..., true))`.
+- `antigravity_result` now overwrites stale narration summaries such as `I will...` / `I'll...` with the extracted final summary.
+
+Verification:
+
+- `npm test`: passed after F3/F4 edits, 39 tests.
+- Added focused coverage for baseline exclusion, rename target paths, paths with spaces, readonly `changedFiles: []`, removed-worktree no-clobber, stale narration summary overwrite, JSON summary extraction, summary-heading extraction, boilerplate filtering, and bridge-log fallback.
+
+Pause point:
+
+- F3/F4 are built and unit-verified. Per the handoff, pause here for live re-test after plugin reload before F6/merge.
+
+## F3/F4 Three-Pass Review - 2026-05-30
+
+Pass 1 - Requirement correctness:
+
+- Re-read the F3/F4 diff against the tasklist requirements.
+- Confirmed baseline capture happens in `launchAntigravity` against the actual `execRoot`, which is the prepared worktree for worktree-mode callers.
+- Confirmed readonly jobs force `changedFiles: []` in completion and `antigravity_result`.
+- Confirmed terminal jobs with a missing execution root return stored `changedFiles`/`summary` instead of recomputing.
+
+Pass 2 - Parser and edge-case hardening:
+
+- Found `extractJsonBlock` still trusted the first fenced JSON block, while F4 requires the validated JSON footer to win.
+- Fixed `extractJsonBlock` to parse fenced JSON blocks from the end, returning the last valid JSON payload.
+- Added a regression test proving the final JSON footer beats an earlier example JSON block and markdown fallback.
+
+Pass 3 - Production readiness:
+
+- `npm test`: passed, 40 tests.
+- `npm run smoke`: passed.
+- Searched for old raw `git status --short` usage and first-line summary assignments in `server/src` and `server/dist`; no stale source paths remain.
+- Generated `server/dist/**` is rebuilt.
+- Remaining gate before merge is the requested live plugin reload/re-test sweep.

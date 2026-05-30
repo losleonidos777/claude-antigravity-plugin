@@ -108,14 +108,14 @@ F2 implementation note (2026-05-30): Built on branch `fix/worktree-changedfiles-
 
 **Files:** `server/src/schemas/jobs.ts`, `server/src/core/output-parser.ts`, `server/src/tools/common.ts`, `server/src/tools/result.ts`.
 
-- [ ] **F3.1** Add `baselineStatus?: string[];` to `JobState` in `schemas/jobs.ts`.
-- [ ] **F3.2** In `common.ts` `launchAntigravity`, capture `const baseline = gitChangedFiles(execRoot)` and persist it as `baselineStatus`. **Ordering (depends on F2):** the baseline must be captured **AFTER** the worktree is prepared and F2 has copied untracked / replayed tracked changes into it — otherwise those copied/replayed files show up as job-created changes. So: in worktree mode capture baseline in the *worktree* (`execRoot === worktreePath`) post-F2; in non-worktree mode capture it in `projectRoot` before launch. Capture before the agent actually runs in both cases.
-- [ ] **F3.3** Add a helper in `output-parser.ts`: `changedSince(cwd, baseline: string[]): string[]` = `gitChangedFiles(cwd)` minus entries present in `baseline` (set difference on path strings).
-- [ ] **F3.4** In `common.ts` (both background `onExit` and foreground paths) and `result.ts`, compute `changedFiles` via `changedSince(execRoot, job.baselineStatus ?? [])` instead of raw `gitChangedFiles`.
-- [ ] **F3.5** Contract guard: if `job.mode === "readonly"`, force `changedFiles = []`.
-- [ ] **F3.6 (content-change caveat)** `gitChangedFiles` returns **paths only** (status codes are stripped at [`output-parser.ts:97`](server/src/core/output-parser.ts)). Set-difference on paths correctly removes pre-existing untracked **noise**, but will NOT flag a file that was already dirty in the baseline and then *further modified* by the job. This is acceptable for fixing the false-positive bug; if you want true "this job touched it" fidelity, key the baseline on `XY\tpath` (status code + path) or snapshot content hashes. Document whichever you choose; don't silently leave it ambiguous.
-- [ ] **F3.7 (don't clobber a good record on re-read)** `result.ts` recomputes `changedFiles` on **every** call ([`result.ts:12-15`](server/src/tools/result.ts)). For a finished worktree job whose worktree was later removed, `changedSince` can return `[]` and overwrite a previously-correct stored value. Guard: if the job is in a terminal state AND the execution root no longer exists (`!fs.existsSync(executionRoot)`), return the **stored** `changedFiles`/`summary` instead of recomputing/overwriting.
-- [ ] **F3.8** `npm run build`.
+- [x] **F3.1** Add `baselineStatus?: string[];` to `JobState` in `schemas/jobs.ts`.
+- [x] **F3.2** In `common.ts` `launchAntigravity`, capture `const baseline = gitChangedFiles(execRoot)` and persist it as `baselineStatus`. **Ordering (depends on F2):** the baseline must be captured **AFTER** the worktree is prepared and F2 has copied untracked / replayed tracked changes into it — otherwise those copied/replayed files show up as job-created changes. So: in worktree mode capture baseline in the *worktree* (`execRoot === worktreePath`) post-F2; in non-worktree mode capture it in `projectRoot` before launch. Capture before the agent actually runs in both cases.
+- [x] **F3.3** Add a helper in `output-parser.ts`: `changedSince(cwd, baseline: string[]): string[]` = `gitChangedFiles(cwd)` minus entries present in `baseline` (set difference on path strings).
+- [x] **F3.4** In `common.ts` (both background `onExit` and foreground paths) and `result.ts`, compute `changedFiles` via `changedSince(execRoot, job.baselineStatus ?? [])` instead of raw `gitChangedFiles`.
+- [x] **F3.5** Contract guard: if `job.mode === "readonly"`, force `changedFiles = []`.
+- [x] **F3.6 (content-change caveat)** `gitChangedFiles` returns **paths only** (status codes are stripped at [`output-parser.ts:97`](server/src/core/output-parser.ts)). Set-difference on paths correctly removes pre-existing untracked **noise**, but will NOT flag a file that was already dirty in the baseline and then *further modified* by the job. This is acceptable for fixing the false-positive bug; if you want true "this job touched it" fidelity, key the baseline on `XY\tpath` (status code + path) or snapshot content hashes. Document whichever you choose; don't silently leave it ambiguous.
+- [x] **F3.7 (don't clobber a good record on re-read)** `result.ts` recomputes `changedFiles` on **every** call ([`result.ts:12-15`](server/src/tools/result.ts)). For a finished worktree job whose worktree was later removed, `changedSince` can return `[]` and overwrite a previously-correct stored value. Guard: if the job is in a terminal state AND the execution root no longer exists (`!fs.existsSync(executionRoot)`), return the **stored** `changedFiles`/`summary` instead of recomputing/overwriting.
+- [x] **F3.8** `npm run build`.
 
 ### ✅ Live verification F3
 - [ ] **F3-LV1 (readonly reports nothing):** with Fixture U untracked, run `antigravity_delegate { prompt: "List the .py files in bigmotion_pipeline/. Do not modify anything.", mode: "readonly" }`. After completion call `antigravity_result { jobId }`.
@@ -129,16 +129,16 @@ F2 implementation note (2026-05-30): Built on branch `fix/worktree-changedfiles-
 
 **Files:** `server/src/core/output-parser.ts`, `server/src/tools/common.ts`, `server/src/tools/result.ts`.
 
-- [ ] **F4.1** Add `extractSummary(markdown: string): string` to `output-parser.ts`, in priority order:
+- [x] **F4.1** Add `extractSummary(markdown: string): string` to `output-parser.ts`, in priority order:
   1. `extractJsonBlock(markdown)?.summary` (already-existing helper), else
   2. text under a heading matching `/^#{1,6}\s*.*summary\s*$/im` (capture until next heading), else
   3. text after an inline `Summary:` label, else
   4. **last** meaningful paragraph — but **filtered**: when picking the last non-empty block, EXCLUDE the trailing boilerplate sections the prompts mandate (`Files changed`, `Commands run`, `Tests run`, `Remaining risks`, `Human review needed`) and any line starting with `I will `/`I'll `. Otherwise the "last paragraph" is just `Human review needed: None`. Reuse `truncate()` (as `firstMeaningfulParagraph` does at lines 26-29) and strip code fences first.
   - **Log-fallback guard:** `readResult` falls back to the raw **log** when no result file exists ([`output-parser.ts:81-85`](server/src/core/output-parser.ts)). A log tail is bridge noise, not a summary — if extraction is operating on log content (no result file), return a short neutral string (e.g. first non-narration line, capped) rather than a misleading "summary".
-- [ ] **F4.2** Replace the `result.stdout.split(...).find(line => line.trim())` summary assignment in `common.ts` (lines ~76 and ~108) with `extractSummary(readResult(state.resultPath, state.logPath, true))`.
-- [ ] **F4.3** Fix the **stale-summary preservation** in `result.ts` (line ~15). It currently does `job.summary || extractSummary(...)`, which **keeps** the bad first-line summary already stored at job completion. Change so a stored summary that is clearly narration (matches `^I will `/`I'll `) is **overwritten** by `extractSummary(resultMarkdown)`; only fall back to the stored value if extraction yields nothing.
+- [x] **F4.2** Replace the `result.stdout.split(...).find(line => line.trim())` summary assignment in `common.ts` (lines ~76 and ~108) with `extractSummary(readResult(state.resultPath, state.logPath, true))`.
+- [x] **F4.3** Fix the **stale-summary preservation** in `result.ts` (line ~15). It currently does `job.summary || extractSummary(...)`, which **keeps** the bad first-line summary already stored at job completion. Change so a stored summary that is clearly narration (matches `^I will `/`I'll `) is **overwritten** by `extractSummary(resultMarkdown)`; only fall back to the stored value if extraction yields nothing.
 - [ ] **F4.4** (Optional polish) strip leading `^I will .*$` / `^I'll .*$` narration lines from delegate/execute `resultMarkdown` before returning, or capture only the final structured section.
-- [ ] **F4.5** `npm run build`.
+- [x] **F4.5** `npm run build`.
 
 ### ✅ Live verification F4
 - [ ] **F4-LV1:** rerun the delegate from F3-LV1; call `antigravity_result`.
@@ -153,9 +153,9 @@ F2 implementation note (2026-05-30): Built on branch `fix/worktree-changedfiles-
 
 - [ ] **F5.1** `prompt-builder.test.mjs`: temp git repo. Cases: (a) untracked file → `collectGitContext(target:"file")` embeds contents (not `(no diff)`) and `hasContent===true`; (b) clean tracked file (no diff) → embeds contents; (c) **binary** file → NOT dumped, note emitted; (d) **oversize** file → truncated/skipped per cap; (e) bare `working-tree` with only an unrelated untracked dir → `hasContent===false` (drives the fast-fail/skip path).
 - [ ] **F5.2** `worktree.test.mjs`: temp git repo with (1) committed file, (2) a committed file with an **unstaged edit**, (3) a **staged** edit, (4) an **untracked** file, (5) an **ignored** file. Call `prepareWorktree`; assert: untracked file present, tracked modifications (2)+(3) replayed, ignored file **absent**, `warning` set with a copied-count. Cover a **rename** in `changed-files` test too. Clean up the worktree + branch.
-- [ ] **F5.3** `changed-files.test.mjs`: temp repo with a pre-existing untracked file as baseline; assert `changedSince` excludes the baseline entry, includes a newly created file, and handles a **renamed** path (the `old -> new` parsing at `output-parser.ts:97-99`); assert readonly mode yields `[]`; assert the F3.7 guard returns stored value when `executionRoot` is missing.
-- [ ] **F5.4** `summary.test.mjs`: feed `extractSummary` (a) markdown with a JSON block, (b) markdown with a `## Summary` heading, (c) narration-then-conclusion ending in mandated boilerplate (`Human review needed: None`) → asserts it returns the real conclusion, NOT the boilerplate and NOT the first `"I will…"` line, (d) log-only content → neutral short string.
-- [ ] **F5.5** `npm test` → all green.
+- [x] **F5.3** `changed-files.test.mjs`: temp repo with a pre-existing untracked file as baseline; assert `changedSince` excludes the baseline entry, includes a newly created file, and handles a **renamed** path (the `old -> new` parsing at `output-parser.ts:97-99`); assert readonly mode yields `[]`; assert the F3.7 guard returns stored value when `executionRoot` is missing.
+- [x] **F5.4** `summary.test.mjs`: feed `extractSummary` (a) markdown with a JSON block, (b) markdown with a `## Summary` heading, (c) narration-then-conclusion ending in mandated boilerplate (`Human review needed: None`) → asserts it returns the real conclusion, NOT the boilerplate and NOT the first `"I will…"` line, (d) log-only content → neutral short string.
+- [x] **F5.5** `npm test` → all green.
 
 ---
 

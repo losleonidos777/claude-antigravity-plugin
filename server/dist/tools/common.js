@@ -4,7 +4,7 @@ import { buildInvocation, doctor } from "../core/cli-adapter.js";
 import { JobStore } from "../core/job-store.js";
 import { getProjectRoot, projectPaths } from "../core/paths.js";
 import { runBackground, runForeground } from "../core/process-runner.js";
-import { gitChangedFiles, writePatchIfAny } from "../core/output-parser.js";
+import { changedSince, extractSummary, gitChangedFiles, readResult, writePatchIfAny } from "../core/output-parser.js";
 import { maxJobMsFromEnv } from "../schemas/config.js";
 export async function launchAntigravity(params) {
     const projectRoot = getProjectRoot();
@@ -17,6 +17,8 @@ export async function launchAntigravity(params) {
     const check = doctor(projectRoot, { includeAuthStatus: false });
     if (!check.binary.resolvedPath)
         throw new Error(check.errors[0] || "Antigravity CLI binary not found.");
+    const execRoot = params.executionRoot || projectRoot;
+    const baselineStatus = gitChangedFiles(execRoot);
     const invocation = buildInvocation({
         binary: check.binary.resolvedPath,
         capabilities: check.capabilities,
@@ -34,6 +36,7 @@ export async function launchAntigravity(params) {
         worktreePath: params.worktreePath,
         branchName: params.branchName,
         warning: params.warning,
+        baselineStatus,
         parsedTasks: params.parsedTasks
     });
     const finalPromptPath = path.join(state.artifactDir, "prompt.md");
@@ -44,13 +47,14 @@ export async function launchAntigravity(params) {
     const timeoutMs = Number(params.maxRuntimeMs || 0) > 0 ? Number(params.maxRuntimeMs) : maxJobMsFromEnv();
     if (params.background) {
         const child = runBackground(invocation, {
-            cwd: params.executionRoot || projectRoot,
+            cwd: execRoot,
             logPath: state.logPath,
             resultPath: state.resultPath,
             timeoutMs,
             onExit: (result) => {
-                const changedFiles = gitChangedFiles(params.executionRoot || projectRoot);
-                const patchPath = writePatchIfAny(params.executionRoot || projectRoot, path.join(state.artifactDir, "changes.patch"));
+                const changedFiles = state.mode === "readonly" ? [] : changedSince(execRoot, state.baselineStatus ?? []);
+                const patchPath = writePatchIfAny(execRoot, path.join(state.artifactDir, "changes.patch"));
+                const summary = extractSummary(readResult(state.resultPath, state.logPath, true)) || result.status;
                 store.update(state.jobId, {
                     status: result.status,
                     exitCode: result.exitCode,
@@ -58,7 +62,7 @@ export async function launchAntigravity(params) {
                     finishedAt: new Date().toISOString(),
                     changedFiles,
                     patchPath,
-                    summary: result.stdout.split(/\r?\n/).find((line) => line.trim()) || result.stderr.split(/\r?\n/).find((line) => line.trim()) || result.status
+                    summary
                 });
             }
         });
@@ -76,13 +80,14 @@ export async function launchAntigravity(params) {
     }
     const running = store.update(state.jobId, { status: "running", startedAt: new Date().toISOString() });
     const result = await runForeground(invocation, {
-        cwd: params.executionRoot || projectRoot,
+        cwd: execRoot,
         logPath: running.logPath,
         resultPath: running.resultPath,
         timeoutMs
     });
-    const changedFiles = gitChangedFiles(params.executionRoot || projectRoot);
-    const patchPath = writePatchIfAny(params.executionRoot || projectRoot, path.join(running.artifactDir, "changes.patch"));
+    const changedFiles = running.mode === "readonly" ? [] : changedSince(execRoot, running.baselineStatus ?? []);
+    const patchPath = writePatchIfAny(execRoot, path.join(running.artifactDir, "changes.patch"));
+    const summary = extractSummary(readResult(running.resultPath, running.logPath, true)) || result.status;
     const done = store.update(running.jobId, {
         status: result.status,
         exitCode: result.exitCode,
@@ -90,7 +95,7 @@ export async function launchAntigravity(params) {
         finishedAt: new Date().toISOString(),
         changedFiles,
         patchPath,
-        summary: result.stdout.split(/\r?\n/).find((line) => line.trim()) || result.stderr.split(/\r?\n/).find((line) => line.trim()) || result.status
+        summary
     });
     return { state: done, run: result, warning: done.warning };
 }
