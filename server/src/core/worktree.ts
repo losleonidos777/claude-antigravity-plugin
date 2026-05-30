@@ -39,9 +39,29 @@ function pushWarning(warnings: string[], message: string): void {
 }
 
 function replayTrackedChanges(projectRoot: string, worktreePath: string, warnings: string[]): void {
-  const names = git(projectRoot, ["diff", "--name-only", "HEAD", "--"]);
-  const trackedCount = names.ok ? names.stdout.split(/\r?\n/).filter(Boolean).length : 0;
-  const patch = gitBuffer(projectRoot, ["diff", "--binary", "--no-ext-diff", "--no-textconv", "HEAD", "--"]);
+  // NUL-delimited so paths with spaces/newlines stay intact.
+  const names = git(projectRoot, ["diff", "--name-only", "-z", "HEAD", "--"]);
+  if (!names.ok) {
+    pushWarning(warnings, `Could not enumerate tracked modifications for worktree replay: ${names.stderr || names.stdout}`);
+    return;
+  }
+  const changed = names.stdout.split("\0").filter(Boolean);
+  if (changed.length === 0) return;
+
+  // Tracked dirty edits bypass the untracked copy's denylist, so filter here too:
+  // never replay modifications under .env / key / dist/ / build/ etc. into the worktree.
+  const allowed = changed.filter((p) => !pathIsDenied(p));
+  const deniedCount = changed.length - allowed.length;
+  if (allowed.length === 0) {
+    if (deniedCount > 0) {
+      pushWarning(warnings, `Skipped ${deniedCount} tracked modification(s) under denied paths; none replayed into the isolated worktree.`);
+    }
+    return;
+  }
+  const trackedCount = allowed.length;
+
+  // Scope the diff to the allowed pathspecs only.
+  const patch = gitBuffer(projectRoot, ["diff", "--binary", "--no-ext-diff", "--no-textconv", "HEAD", "--", ...allowed]);
   if (!patch.ok) {
     pushWarning(warnings, `Could not inspect tracked modifications for worktree replay: ${patch.stderr}`);
     return;
@@ -54,15 +74,16 @@ function replayTrackedChanges(projectRoot: string, worktreePath: string, warning
     fs.writeFileSync(patchPath, patch.stdout);
     const check = git(worktreePath, ["apply", "--check", "--whitespace=nowarn", patchPath]);
     if (!check.ok) {
-      pushWarning(warnings, `Could not replay ${trackedCount || "tracked"} tracked modification(s): git apply --check failed: ${check.stderr || check.stdout}`);
+      pushWarning(warnings, `Could not replay ${trackedCount} tracked modification(s): git apply --check failed: ${check.stderr || check.stdout}`);
       return;
     }
     const apply = git(worktreePath, ["apply", "--whitespace=nowarn", patchPath]);
     if (!apply.ok) {
-      pushWarning(warnings, `Could not replay ${trackedCount || "tracked"} tracked modification(s): ${apply.stderr || apply.stdout}`);
+      pushWarning(warnings, `Could not replay ${trackedCount} tracked modification(s): ${apply.stderr || apply.stdout}`);
       return;
     }
-    pushWarning(warnings, `Replayed ${trackedCount || "tracked"} tracked modification(s) into the isolated worktree.`);
+    const note = `Replayed ${trackedCount} tracked modification(s) into the isolated worktree.`;
+    pushWarning(warnings, deniedCount > 0 ? `${note} Skipped ${deniedCount} under denied paths.` : note);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
