@@ -60,8 +60,11 @@ function replayTrackedChanges(projectRoot: string, worktreePath: string, warning
   }
   const trackedCount = allowed.length;
 
-  // Scope the diff to the allowed pathspecs only.
-  const patch = gitBuffer(projectRoot, ["diff", "--binary", "--no-ext-diff", "--no-textconv", "HEAD", "--", ...allowed]);
+  // Scope the diff to the allowed paths only. Use :(literal) magic so a filename
+  // containing pathspec metacharacters (e.g. a file literally named "foo*") cannot
+  // glob-match a denied file ("foo.env") we just filtered out.
+  const literalPathspecs = allowed.map((p) => `:(literal)${p}`);
+  const patch = gitBuffer(projectRoot, ["diff", "--binary", "--no-ext-diff", "--no-textconv", "HEAD", "--", ...literalPathspecs]);
   if (!patch.ok) {
     pushWarning(warnings, `Could not inspect tracked modifications for worktree replay: ${patch.stderr}`);
     return;
