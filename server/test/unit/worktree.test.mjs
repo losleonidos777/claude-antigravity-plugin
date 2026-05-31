@@ -6,6 +6,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 import { prepareWorktree } from '../../dist/core/worktree.js';
+import { gitChangedFiles, changedSince } from '../../dist/core/output-parser.js';
 
 function git(cwd, args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8' });
@@ -128,6 +129,38 @@ test('prepareWorktree replays allowed paths literally so a glob-named file canno
       try {
         git(root, ['branch', '-D', result.branchName]);
       } catch {}
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(worktreesDir, { recursive: true, force: true });
+  }
+});
+
+test('Edge C: changedFiles attributes in-place edits to replayed-untracked files', () => {
+  const root = setupRepo();
+  const worktreesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-wt-out-'));
+  let result;
+  try {
+    // Host has an untracked doc (mirrors the staged-but-uncommitted cold-test fixture).
+    fs.writeFileSync(path.join(root, 'API_GUIDE.md'), 'original guide\n');
+
+    result = prepareWorktree(root, worktreesDir, 'wt-edgec');
+    const wt = result.worktreePath;
+    assert.ok(fs.existsSync(path.join(wt, 'API_GUIDE.md')), 'untracked file should be replayed into the worktree');
+
+    // The baseline-commit means the replayed state is HEAD, so baseline is clean.
+    const baseline = gitChangedFiles(wt);
+
+    // The "agent" edits the replayed-untracked file AND creates a new file.
+    fs.writeFileSync(path.join(wt, 'API_GUIDE.md'), 'original guide\n\nedited by the agent\n');
+    fs.writeFileSync(path.join(wt, 'CLEANUP_NOTES.md'), 'new notes\n');
+
+    const changed = changedSince(wt, baseline);
+    assert.ok(changed.includes('API_GUIDE.md'), `in-place edit must be attributed: ${JSON.stringify(changed)}`);
+    assert.ok(changed.includes('CLEANUP_NOTES.md'), `new file must be attributed: ${JSON.stringify(changed)}`);
+  } finally {
+    if (result) {
+      try { git(root, ['worktree', 'remove', '--force', result.worktreePath]); } catch {}
+      try { git(root, ['branch', '-D', result.branchName]); } catch {}
     }
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(worktreesDir, { recursive: true, force: true });

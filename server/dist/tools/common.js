@@ -45,6 +45,7 @@ export async function launchAntigravity(params) {
     invocation.stdinFile = invocation.stdinFile === promptPath ? finalPromptPath : invocation.stdinFile;
     invocation.args = invocation.args.map((arg) => (arg === promptPath ? finalPromptPath : arg));
     const timeoutMs = Number(params.maxRuntimeMs || 0) > 0 ? Number(params.maxRuntimeMs) : maxJobMsFromEnv();
+    const deadlineAt = new Date(Date.now() + timeoutMs).toISOString();
     if (params.background) {
         const child = runBackground(invocation, {
             cwd: execRoot,
@@ -55,18 +56,25 @@ export async function launchAntigravity(params) {
                 const changedFiles = state.mode === "readonly" ? [] : changedSince(execRoot, state.baselineStatus ?? []);
                 const patchPath = writePatchIfAny(execRoot, path.join(state.artifactDir, "changes.patch"));
                 const summary = extractSummary(readResult(state.resultPath, state.logPath, true)) || result.status;
-                store.update(state.jobId, {
-                    status: result.status,
-                    exitCode: result.exitCode,
-                    signal: result.signal,
-                    finishedAt: new Date().toISOString(),
-                    changedFiles,
-                    patchPath,
-                    summary
-                });
+                // A cancel (same live server instance) or the durable reaper may have already written a
+                // deliberate terminal status before this async close fires. Preserve that status/finishedAt
+                // instead of clobbering it with the killed process's exit result; still attach artifacts.
+                const current = store.peek(state.jobId);
+                const externallyTerminal = current?.status === "cancelled" || current?.status === "timeout";
+                store.update(state.jobId, externallyTerminal
+                    ? { exitCode: result.exitCode, signal: result.signal, changedFiles, patchPath, summary }
+                    : {
+                        status: result.status,
+                        exitCode: result.exitCode,
+                        signal: result.signal,
+                        finishedAt: new Date().toISOString(),
+                        changedFiles,
+                        patchPath,
+                        summary
+                    });
             }
         });
-        const updated = store.update(state.jobId, { status: "running", pid: child.pid, startedAt: new Date().toISOString() });
+        const updated = store.update(state.jobId, { status: "running", pid: child.pid, startedAt: new Date().toISOString(), deadlineAt });
         return {
             jobId: updated.jobId,
             status: updated.status,
@@ -78,7 +86,7 @@ export async function launchAntigravity(params) {
             warning: updated.warning
         };
     }
-    const running = store.update(state.jobId, { status: "running", startedAt: new Date().toISOString() });
+    const running = store.update(state.jobId, { status: "running", startedAt: new Date().toISOString(), deadlineAt });
     const result = await runForeground(invocation, {
         cwd: execRoot,
         logPath: running.logPath,

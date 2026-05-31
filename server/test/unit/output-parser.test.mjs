@@ -208,6 +208,37 @@ test('extractSummary skips narration and trailing boilerplate', () => {
   assert.equal(extractSummary(markdown), 'The task is feasible after adding validation around baseline state.');
 });
 
+test('extractSummary does not pick the Areas Reviewed file-list as the summary', () => {
+  // Adversarial/review output with no JSON footer and no Summary/Verdict heading: the
+  // last meaningful block is the "Areas Reviewed" bullet list, which is NOT the verdict.
+  const markdown = [
+    '# Adversarial Review',
+    '',
+    'REJECTED: the migration plan drops referential integrity for orphaned records.',
+    '',
+    '## Areas Reviewed',
+    '- API_GUIDE.md',
+    '- migration-plan.md',
+    '- task-list.md'
+  ].join('\n');
+  const summary = extractSummary(markdown);
+  assert.ok(!/API_GUIDE\.md/.test(summary), `summary must not be the Areas Reviewed list: ${summary}`);
+  assert.equal(summary, 'REJECTED: the migration plan drops referential integrity for orphaned records.');
+});
+
+test('extractSummary still prefers the JSON footer verdict for reviews', () => {
+  const markdown = [
+    '## Areas Reviewed',
+    '- a.md',
+    '- b.md',
+    '',
+    '```json',
+    '{"summary":"REJECTED: unsafe destructive migration.","findings":[]}',
+    '```'
+  ].join('\n');
+  assert.equal(extractSummary(markdown), 'REJECTED: unsafe destructive migration.');
+});
+
 test('extractSummary returns neutral fallback for bridge-only logs', () => {
   const markdown = [
     '[antigravity-bridge] start',

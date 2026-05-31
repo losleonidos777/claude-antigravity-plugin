@@ -4,6 +4,11 @@ import * as path from "node:path";
 import { JobKind, JobMode, JobState, JobStatus } from "../schemas/jobs.js";
 import { nowIso, projectPaths } from "./paths.js";
 import { redactSecrets } from "./safety.js";
+import { killProcessTree } from "./process-runner.js";
+
+// A job is only reaped once it is past its deadline by this margin, so minor clock
+// skew or a freshly-launched job whose clock differs slightly is never killed early.
+const REAP_SKEW_MS = 5_000;
 
 function atomicWriteJson(filePath: string, data: unknown): void {
   const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
@@ -87,6 +92,19 @@ export class JobStore {
     return this.reconcile(state);
   }
 
+  // Raw read with no reconcile/side-effects — used to check the currently-persisted status
+  // before overwriting it (e.g. so an async onExit cannot clobber a cancel/timeout already
+  // written by cancel.ts or the reaper). Returns null if the record is missing/unreadable.
+  peek(jobId: string): JobState | null {
+    const filePath = path.join(this.paths.jobsDir, `${jobId}.json`);
+    if (!fs.existsSync(filePath)) return null;
+    try {
+      return JSON.parse(fs.readFileSync(filePath, "utf8")) as JobState;
+    } catch {
+      return null;
+    }
+  }
+
   update(jobId: string, patch: Partial<JobState>): JobState {
     const filePath = path.join(this.paths.jobsDir, `${jobId}.json`);
     if (!fs.existsSync(filePath)) throw new Error(`Unknown Antigravity job: ${jobId}`);
@@ -114,7 +132,10 @@ export class JobStore {
   }
 
   reconcile(state: JobState): JobState {
-    if (state.status === "running" && !pidIsAlive(state.pid)) {
+    if (state.status !== "running") return state;
+
+    // Dead PID: infer a terminal status from the log/result artifacts.
+    if (!pidIsAlive(state.pid)) {
       const log = state.logPath && fs.existsSync(state.logPath) ? fs.readFileSync(state.logPath, "utf8") : "";
       const resultExists = Boolean(state.resultPath && fs.existsSync(state.resultPath));
       const inferredStatus: JobStatus = log.includes("[antigravity-bridge] done exitCode=0") || resultExists ? "completed" : "unknown";
@@ -130,6 +151,35 @@ export class JobStore {
       atomicWriteJson(state.statePath, merged);
       return merged;
     }
+
+    // Alive but past its persisted deadline: the in-memory setTimeout watchdog was lost
+    // (server recycle/reconnect). Every read/list call thus acts as a durable reaper —
+    // kill the orphaned process tree and mark the job timed out. Jobs without a
+    // deadlineAt (e.g. legacy records) are left untouched.
+    if (state.deadlineAt) {
+      const deadline = Date.parse(state.deadlineAt);
+      if (Number.isFinite(deadline) && Date.now() > deadline + REAP_SKEW_MS) {
+        // Accepted limitation: we kill by persisted PID without verifying process identity, so an
+        // OS PID-reuse between the liveness check and the kill could target an unrelated process.
+        // The window requires the agy child to have died, its PID reused, and the state to still
+        // read `running` (server-recycle path). A full fix needs process start-time/handle tracking
+        // at launch; tracked as a follow-up rather than solved in this cold-test fix.
+        killProcessTree(state.pid!, "SIGKILL");
+        const merged: JobState = {
+          ...state,
+          status: "timeout",
+          finishedAt: state.finishedAt || nowIso(),
+          error: {
+            code: "deadline_exceeded",
+            message: `Job exceeded its ${state.deadlineAt} deadline while still running; the bridge killed the orphaned process tree (pid ${state.pid}).`
+          },
+          updatedAt: nowIso()
+        };
+        atomicWriteJson(state.statePath, merged);
+        return merged;
+      }
+    }
+
     return state;
   }
 }

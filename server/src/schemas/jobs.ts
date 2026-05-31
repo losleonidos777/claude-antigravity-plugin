@@ -40,6 +40,10 @@ export interface JobState {
   startedAt?: string;
   updatedAt: string;
   finishedAt?: string;
+  // Absolute wall-clock deadline (startedAt + timeoutMs) persisted at launch so a
+  // durable reaper in JobStore.reconcile can kill an alive-past-deadline background
+  // job even after the in-memory setTimeout watchdog is lost to a server recycle.
+  deadlineAt?: string;
   exitCode?: number | null;
   signal?: string | null;
   summary?: string;

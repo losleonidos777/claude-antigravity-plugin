@@ -28,7 +28,9 @@ function isNarration(line) {
     return /^(?:I will|I'll)\b/i.test(line.trim());
 }
 function isBoilerplateHeading(line) {
-    return /^(?:#{1,6}\s*)?(?:[-*]\s*)?(?:files changed|commands run|tests run|remaining risks|human review needed)\s*:?\s*$/i.test(line.trim());
+    // "areas reviewed" / "scope of review" is the bulleted file-list that review and
+    // adversarial_review emit; it is never the verdict, so it must not be picked as a summary.
+    return /^(?:#{1,6}\s*)?(?:[-*]\s*)?(?:files changed|commands run|tests run|remaining risks|human review needed|areas reviewed|areas of review|scope of review)\s*:?\s*$/i.test(line.trim());
 }
 function isBridgeLog(line) {
     return /^\[antigravity-bridge\]/i.test(line.trim());

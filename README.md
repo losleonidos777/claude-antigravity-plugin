@@ -122,10 +122,13 @@ Modes:
 
 - `readonly`: investigation only
 - `suggest`: Antigravity may propose a patch artifact; Claude/user applies manually
-- `worktree`: Antigravity runs in an isolated git worktree when possible. The current
-  release creates a clean linked worktree from Git; if your task depends on
-  untracked files or uncommitted edits, prefer `readonly`/`suggest` or make sure the
-  relevant files are tracked/staged until the full working-state replay release lands.
+- `worktree`: Antigravity runs in an isolated git worktree. The bridge reproduces your
+  full working state into it — untracked-but-not-ignored files are copied and dirty
+  tracked edits are replayed (denied/secret paths are never copied), then committed as a
+  throwaway baseline so the agent sees what you see and `changedFiles` is attributed
+  correctly. Your main working tree is never touched. Caveat: `git diff HEAD` collapses
+  staged vs. unstaged, so the worktree reproduces combined working-tree content, not the
+  separate index state.
 - `direct-edit`: intentionally unsupported
 
 ## Best practices
@@ -136,9 +139,9 @@ Modes:
   `/antigravity:review target:file ref:path/to/file`.
 - Use broad `/antigravity:review` for tracked working-tree or staged diffs.
   If there is no reviewable diff, the tool returns `skipped` immediately.
-- Treat `worktree` mode as isolation, not a magic copy of every local scratch file.
-  Until full working-state replay is released, stage or track files that the agent
-  must see, or use readonly investigation first.
+- `worktree` mode reproduces your full working state (untracked + dirty tracked) into an
+  isolated worktree, but skips denied/secret paths by policy — keep secrets out of the
+  task scope regardless.
 - Always inspect `logPath`, `artifactDir`, and `statePath` from tool results before
   relying on an automated conclusion.
 - Do not put secrets in reviewed files, prompts, or task lists. The bridge redacts
@@ -207,14 +210,22 @@ The transport choice is also visible per job in the log file:
 
 - Antigravity CLI's non-interactive command surface may differ by version. Run `/antigravity:doctor` first.
 - If doctor cannot prove non-interactive support, configure `cli_template`.
-- Background jobs update state while the MCP server process remains alive. If Claude Code restarts mid-job, `/antigravity:status` reconciles stale running states by checking PID liveness and log/result markers.
+- Background-job timeouts are enforced durably: each job persists a deadline, and any
+  later `/antigravity:status` (or `result`) call reaps a job whose process is alive past
+  its deadline, even after an MCP-server restart drops the in-memory watchdog.
+- `/antigravity:cancel` verifies the process actually died — on Windows it escalates an
+  ignored `SIGTERM` to a forced kill and only reports `cancelled` after confirming
+  termination. Kills target the persisted PID without verifying process identity, so an OS
+  PID reuse in the narrow window between the liveness check and the kill is a known,
+  accepted edge.
 - Worktree mode requires a git repository and enough local permissions to create a worktree.
-- Worktree mode currently starts from committed Git state. Full replay of untracked
-  files and dirty tracked edits is planned next.
-- `changedFiles` currently reflects Git status at result time, so pre-existing
-  untracked files may appear in older jobs. Baseline-based attribution is planned.
-- Some Antigravity outputs may include opening narration before the final answer.
-  Summary extraction improvements are planned.
+- `changedFiles` is attributed relative to a baseline captured after the worktree is
+  prepared, so pre-existing untracked noise is excluded and in-place edits to replayed
+  files are counted. It is status-based, so changes the agent commits inside the worktree
+  itself are not listed.
+- Summary extraction prefers a structured JSON footer, then a Summary/Verdict heading, and
+  filters opening narration and boilerplate (e.g. "Areas Reviewed") — but unusual output
+  shapes can still mis-select; inspect the raw result when in doubt.
 
 ## Repository layout
 

@@ -2,8 +2,34 @@
 
 ## Unreleased
 
+## 0.3.0 — 2026-05-31
+
 ### Fixed
 
+- **Background-job timeouts are now durably enforced (cold-test Bug A).** Each job
+  persists a `deadlineAt` (`startedAt + timeoutMs`) at launch, and
+  `JobStore.reconcile` — run by every `status`/`result` call — now kills any
+  `running` job whose PID is alive but past its deadline (with a 5 s clock-skew
+  margin) and marks it `timeout`. This survives MCP-server recycles that drop the
+  in-memory `setTimeout` watchdog; previously an orphaned `agy` could spin
+  unbounded. Jobs without a `deadlineAt` are never reaped.
+- **`cancel` no longer reports success while the process survives (cold-test
+  Bug B).** `antigravityCancel` now sends the requested signal, waits a grace
+  period, and re-verifies liveness via a new `killProcessTreeConfirmed` helper —
+  escalating SIGTERM to a forced SIGKILL (`taskkill /F /T`) when a spinning
+  Windows console process ignores the polite signal. It reports `cancelled:true`
+  only after the process tree is confirmed gone; otherwise `cancelled:false` and
+  the job is left running for the reaper/retry. `taskkill`'s "signal sent" exit
+  code is no longer trusted as proof of death.
+- **Worktree `changedFiles` now captures in-place edits to replayed files
+  (cold-test Edge C).** After replaying untracked/dirty files, `prepareWorktree`
+  creates a throwaway baseline commit so the replayed state is the worktree HEAD;
+  an edit to a replayed-untracked file is then attributed instead of cancelling
+  out against the baseline status snapshot.
+- **Review `summary` no longer picks the "Areas Reviewed" file list (cold-test
+  Nit D).** `extractSummary` treats `Areas Reviewed` / `Areas of review` /
+  `Scope of review` as non-summary boilerplate, so the JSON-footer verdict (or a
+  Summary/Verdict heading) wins.
 - `antigravity_review` and `antigravity_adversarial_review` no longer time out
   on explicitly scoped clean or untracked file targets. When `git diff` is empty
   for `target:file`, the bridge embeds the file contents in a labelled untrusted

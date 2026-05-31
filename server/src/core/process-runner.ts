@@ -92,6 +92,52 @@ export function killProcessTree(pid: number, signal: "SIGTERM" | "SIGKILL" = "SI
   }
 }
 
+// Cross-platform liveness probe. Signal 0 performs the permission/existence check
+// without delivering a signal; ESRCH means gone, EPERM means alive but not ours.
+export function processIsAlive(pid?: number): boolean {
+  if (!pid || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error: any) {
+    return error?.code === "EPERM";
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export interface KillOutcome {
+  killed: boolean;
+  escalated: boolean;
+}
+
+// Send a signal, then VERIFY the process actually died rather than trusting taskkill's
+// "signal sent" exit code (a spinning Windows console CLI ignores /T without /F yet
+// taskkill still exits 0). On a surviving SIGTERM we escalate to a forced SIGKILL.
+export async function killProcessTreeConfirmed(
+  pid: number,
+  signal: "SIGTERM" | "SIGKILL" = "SIGTERM",
+  graceMs = 2500
+): Promise<KillOutcome> {
+  if (!pid || pid <= 0) return { killed: false, escalated: false };
+
+  killProcessTree(pid, signal);
+
+  if (signal === "SIGKILL") {
+    await delay(Math.min(graceMs, 800));
+    return { killed: !processIsAlive(pid), escalated: false };
+  }
+
+  // SIGTERM ladder: give the process the grace period, then force-kill if it survives.
+  await delay(graceMs);
+  if (!processIsAlive(pid)) return { killed: true, escalated: false };
+  killProcessTree(pid, "SIGKILL");
+  await delay(800);
+  return { killed: !processIsAlive(pid), escalated: true };
+}
+
 export async function runForeground(invocation: Invocation, options: RunOptions): Promise<RunResult> {
   if (invocation.requiresPty) {
     return runForegroundPty(invocation, options);

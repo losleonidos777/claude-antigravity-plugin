@@ -44,7 +44,9 @@ function isNarration(line: string): boolean {
 }
 
 function isBoilerplateHeading(line: string): boolean {
-  return /^(?:#{1,6}\s*)?(?:[-*]\s*)?(?:files changed|commands run|tests run|remaining risks|human review needed)\s*:?\s*$/i.test(line.trim());
+  // "areas reviewed" / "scope of review" is the bulleted file-list that review and
+  // adversarial_review emit; it is never the verdict, so it must not be picked as a summary.
+  return /^(?:#{1,6}\s*)?(?:[-*]\s*)?(?:files changed|commands run|tests run|remaining risks|human review needed|areas reviewed|areas of review|scope of review)\s*:?\s*$/i.test(line.trim());
 }
 
 function isBridgeLog(line: string): boolean {

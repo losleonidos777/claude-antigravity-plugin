@@ -132,6 +132,37 @@ function copyUntrackedFiles(projectRoot, worktreePath, warnings) {
         pushWarning(warnings, parts.join(" "));
     }
 }
+function commitReplayedBaseline(worktreePath, warnings) {
+    // Stage everything the replay produced (untracked copies + applied tracked edits) and
+    // commit it so the replayed working state becomes the worktree's HEAD. Without this, a
+    // replayed-untracked file stays untracked at baseline, so an in-place edit to it by the
+    // agent does not change its status line and gets cancelled out of `changedFiles`.
+    // After the commit the tree is clean, so changedFiles correctly captures both edits and
+    // creations the job makes. Host isolation is unaffected — this only touches the
+    // throwaway worktree branch.
+    const add = git(worktreePath, ["add", "-A"]);
+    if (!add.ok) {
+        pushWarning(warnings, `Could not stage replayed state for the worktree baseline: ${add.stderr || add.stdout}`);
+        return;
+    }
+    // `git diff --cached --quiet` exits 0 when nothing is staged; skip an empty commit.
+    if (git(worktreePath, ["diff", "--cached", "--quiet"]).ok)
+        return;
+    const commit = git(worktreePath, [
+        "-c",
+        "user.email=antigravity-bridge@localhost",
+        "-c",
+        "user.name=Antigravity Bridge",
+        "commit",
+        "--no-gpg-sign",
+        "--no-verify",
+        "-m",
+        "antigravity: replayed working-state baseline"
+    ]);
+    if (!commit.ok) {
+        pushWarning(warnings, `Could not commit the replayed worktree baseline (changedFiles may under-report in-place edits): ${commit.stderr || commit.stdout}`);
+    }
+}
 export function prepareWorktree(projectRoot, worktreesDir, jobId) {
     const inside = git(projectRoot, ["rev-parse", "--is-inside-work-tree"]);
     if (!inside.ok || !/true/.test(inside.stdout)) {
@@ -147,5 +178,6 @@ export function prepareWorktree(projectRoot, worktreesDir, jobId) {
     const warnings = [];
     replayTrackedChanges(projectRoot, worktreePath, warnings);
     copyUntrackedFiles(projectRoot, worktreePath, warnings);
+    commitReplayedBaseline(worktreePath, warnings);
     return { executionRoot: worktreePath, worktreePath, branchName, warning: warnings.join(" ") || undefined };
 }
